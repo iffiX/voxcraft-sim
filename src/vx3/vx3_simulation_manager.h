@@ -8,21 +8,23 @@
 
 #include "vx3/vx3_simulation_record.h"
 #include "vx3/vx3_voxelyze_kernel.cuh"
+#include "vx3/vx3_voxelyze_kernel_manager.cuh"
 #include "vxa/vx3_config.h"
 
 class VX3_SimulationManager {
   public:
     VX3_SimulationManager() = default;
-
-    bool runSim(const VX3_Config &config, int device_index, int max_steps = 1000000);
+    void initSim(const VX3_Config &config, int device_index);
+    bool runSim(int max_steps = 1000000);
     VX3_SimulationRecord getRecord();
     VX3_SimulationResult getResult();
 
   private:
+    cudaStream_t stream;
+    VX3_VoxelyzeKernelManager kernel_manager;
     VX3_VoxelyzeKernel kernel;
     VX3_SimulationRecord record;
     VX3_SimulationResult result;
-    static void enlargeGPUHeapSize(Vfloat heap_ratio = 0);
     void saveResult();
     void saveRecord();
 };

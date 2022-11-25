@@ -17,15 +17,14 @@ class VX3_VoxelyzeKernelManager {
   public:
     VX3_InitContext ictx;
 
-    VX3_VoxelyzeKernel createKernelFromConfig(const VX3_Config &config);
+    VX3_VoxelyzeKernel createKernelFromConfig(const VX3_Config &config,
+                                              const cudaStream_t &stream);
     void freeKernel(VX3_VoxelyzeKernel &kernel);
 
   private:
     std::unordered_map<std::string, Vindex> coordinate_to_voxel_index;
     std::unordered_map<UnorderedPair<Vindex>, Vindex, UnorderedPairHash<Vindex>>
         voxel_materials_to_link_material_index;
-
-    thrust::device_vector<Vindex> target_indices;
 
     void addVoxelMaterial(const VX3_PaletteMaterialConfig &material_config,
                           int material_id, Vfloat lattice_dim, Vfloat internal_damping,

@@ -246,11 +246,7 @@ def test_str(doc):
 
 @pytest.mark.parametrize(
     "func",
-    [
-        m.str_from_bytes_input,
-        m.str_from_cstr_input,
-        m.str_from_std_string_input,
-    ],
+    [m.str_from_bytes_input, m.str_from_cstr_input, m.str_from_std_string_input,],
 )
 def test_surrogate_pairs_unicode_error(func):
     input_str = "\ud83d\ude4f".encode("utf-8", "surrogatepass")
@@ -460,7 +456,7 @@ def test_pybind11_str_raw_str():
     assert cvt(False) == "False"
     assert cvt(True) == "True"
     assert cvt(42) == "42"
-    assert cvt(2**65) == "36893488147419103232"
+    assert cvt(2 ** 65) == "36893488147419103232"
     assert cvt(-1.50) == "-1.5"
     assert cvt(()) == "()"
     assert cvt((18,)) == "(18,)"
@@ -605,11 +601,7 @@ def test_memoryview(method, args, fmt, expected_view):
 
 @pytest.mark.xfail("env.PYPY", reason="getrefcount is not available")
 @pytest.mark.parametrize(
-    "method",
-    [
-        m.test_memoryview_object,
-        m.test_memoryview_buffer_info,
-    ],
+    "method", [m.test_memoryview_object, m.test_memoryview_buffer_info,],
 )
 def test_memoryview_refcount(method):
     buf = b"\x0a\x0b\x0c\x0d"
@@ -834,16 +826,7 @@ def test_inplace_divide(a, b):
 
 
 @pytest.mark.parametrize(
-    "a,b",
-    [
-        (False, True),
-        (
-            set(),
-            {
-                1,
-            },
-        ),
-    ],
+    "a,b", [(False, True), (set(), {1,},),],
 )
 def test_inplace_or(a, b):
     expected = a | b
@@ -851,16 +834,7 @@ def test_inplace_or(a, b):
 
 
 @pytest.mark.parametrize(
-    "a,b",
-    [
-        (True, False),
-        (
-            {1, 2, 3},
-            {
-                1,
-            },
-        ),
-    ],
+    "a,b", [(True, False), ({1, 2, 3}, {1,},),],
 )
 def test_inplace_and(a, b):
     expected = a & b

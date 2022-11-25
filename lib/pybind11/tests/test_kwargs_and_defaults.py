@@ -293,10 +293,7 @@ def test_positional_only_args(msg):
         3,
         4,
         5.0,
-        (
-            6,
-            7,
-        ),
+        (6, 7,),
         9,
         {"m": 8},
     )
@@ -304,10 +301,7 @@ def test_positional_only_args(msg):
         3,
         4,
         5.0,
-        (
-            6,
-            7,
-        ),
+        (6, 7,),
         9,
         {"m": 8},
     )

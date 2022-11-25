@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.12.0)
 # if we need -fPIC globally
-# set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # Set build type to Release by default
 set(CMAKE_BUILD_TYPE RELEASE)
 if (NOT DEFINED CMAKE_BUILD_TYPE)
@@ -17,6 +17,8 @@ set(CMAKE_CXX_STANDARD 17)
 ################################################################
 set(Boost_USE_STATIC_LIBS   ON)
 find_package(Boost REQUIRED COMPONENTS filesystem program_options)
+find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+add_subdirectory(lib/pybind11)
 
 # CUDA options
 find_package(CUDA) # for CUDA_SELECT_NVCC_ARCH_FLAGS function
@@ -57,9 +59,7 @@ endif(CUDA_DEBUG)
 ################################################################
 # Main builds
 ################################################################
-include_directories(usr/include)
 include_directories(lib)
-include_directories(lib/pybind11/include/)
 include_directories(src)
 include_directories(src/vx3)
 include_directories(src/utils)
@@ -68,20 +68,34 @@ include_directories(src/vxa)
 file(GLOB UTILS_SRC_cu src/utils/*.cu)
 file(GLOB VX3_SRC_cu src/vx3/*.cu)
 file(GLOB VXA_SRC_cu src/vxa/*.cu)
+file(GLOB PYTHON_SRC_cu src/python/*.cu)
 
 add_library(voxelyze3 ${UTILS_SRC_cu} ${VX3_SRC_cu} ${VXA_SRC_cu})
-add_executable(voxcraft-sim src/executables/voxcraft_sim.cu)
-
-target_link_libraries(voxcraft-sim PUBLIC voxelyze3)
-
-# for Boost
 target_link_libraries(voxelyze3 PUBLIC ${Boost_LIBRARIES})
-target_link_libraries(voxcraft-sim PUBLIC ${Boost_LIBRARIES})
-
 set_target_properties(voxelyze3 PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-set_target_properties(voxcraft-sim PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 target_compile_options(voxelyze3 PUBLIC ${CUDA_OPTIONS})
+
+add_executable(voxcraft-sim src/executables/voxcraft_sim.cu)
+target_link_libraries(voxcraft-sim PUBLIC voxelyze3)
+target_link_libraries(voxcraft-sim PUBLIC ${Boost_LIBRARIES})
+set_target_properties(voxcraft-sim PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 target_compile_options(voxcraft-sim PUBLIC ${CUDA_OPTIONS})
+
+add_executable(voxcraft-test src/executables/test.cu)
+target_link_libraries(voxcraft-test PUBLIC voxelyze3)
+target_link_libraries(voxcraft-test PUBLIC ${Boost_LIBRARIES})
+set_target_properties(voxcraft-test PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+target_compile_options(voxcraft-test PUBLIC ${CUDA_OPTIONS})
+
+pybind11_add_module(voxcraft SHARED ${PYTHON_SRC_cu})
+target_link_libraries(voxcraft PRIVATE
+        ${Python3_LIBRARIES}
+        voxelyze3)
+target_include_directories(
+        voxcraft PUBLIC
+        ${Python3_INCLUDE_DIRS}
+        ${PYBIND11_INCLUDE_DIR})
+install(TARGETS voxcraft LIBRARY DESTINATION ${CMAKE_CURRENT_SOURCE_DIR})
 ################################################################
 # Testing
 ################################################################

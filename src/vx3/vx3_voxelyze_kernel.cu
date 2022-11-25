@@ -1,9 +1,8 @@
 #include "utils/vx3_conf.h"
+#include "utils/vx3_reduce.cuh"
 #include "vx3/vx3_simulation_record.h"
 #include "vx3_voxelyze_kernel.cuh"
 #include <iostream>
-#include <thrust/functional.h>
-#include <thrust/logical.h>
 
 #define ALLOCATE_FRAME_NUM 10000
 
@@ -11,8 +10,16 @@
 template <typename T>
 inline std::pair<int, int> getGridAndBlockSize(T func, size_t item_num) {
     int min_grid_size, grid_size, block_size;
-    // Dynamically calculate blockSize
-    cudaOccupancyMaxPotentialBlockSize(&min_grid_size, &block_size, func, 0, item_num);
+
+    if (item_num < 256) {
+        // For small simulations, fit them into 1 block
+        // No more than 1024 (cuda max block thread num)
+        block_size = 256;
+    } else {
+        // Dynamically calculate blockSize
+        cudaOccupancyMaxPotentialBlockSize(&min_grid_size, &block_size, func, 0,
+                                           item_num);
+    }
     grid_size = CEIL(item_num, block_size);
     block_size = MIN(item_num, block_size);
     return std::make_pair(grid_size, block_size);
@@ -55,24 +62,21 @@ Vfloat VX3_VoxelyzeKernel::recommendedTimeStep() const {
     // maximum frequency in the simulation in rad/sec
     Vfloat max_freq = 0;
     if (ctx.links.size() > 0) {
-        thrust::device_vector<Vfloat> link_freq(ctx.links.size());
         auto size = getGridAndBlockSize(computeLinkFreq, ctx.links.size());
-        computeLinkFreq<<<size.first, size.second>>>(
-            ctx, thrust::device_pointer_cast(link_freq.data()).get());
+        computeLinkFreq<<<size.first, size.second, 0, stream>>>(ctx, (Vfloat *)d_reduce1);
         CUDA_CHECK_AFTER_CALL();
-        VcudaDeviceSynchronize();
-        max_freq = *thrust::max_element(link_freq.begin(), link_freq.end());
+        max_freq = reduce<Vfloat, maxReduce<Vfloat>>(
+            h_reduce_output, d_reduce1, d_reduce2, d_reduce1, ctx.links.size(), stream);
     }
     if (max_freq <= 0.0f) {
         // didn't find anything (i.e no links) check for
         // individual voxels
-        thrust::device_vector<Vfloat> voxel_freq(ctx.voxels.size());
         auto size = getGridAndBlockSize(computeVoxelFreq, ctx.voxels.size());
-        computeVoxelFreq<<<size.first, size.second>>>(
-            ctx, thrust::device_pointer_cast(voxel_freq.data()).get());
+        computeVoxelFreq<<<size.first, size.second, 0, stream>>>(ctx,
+                                                                 (Vfloat *)d_reduce1);
         CUDA_CHECK_AFTER_CALL();
-        VcudaDeviceSynchronize();
-        max_freq = *thrust::max_element(voxel_freq.begin(), voxel_freq.end());
+        max_freq = reduce<Vfloat, maxReduce<Vfloat>>(
+            h_reduce_output, d_reduce1, d_reduce2, d_reduce1, ctx.voxels.size(), stream);
     }
 
     if (max_freq <= 0.0f)
@@ -106,14 +110,12 @@ __global__ void checkLinkDivergence(VX3_Context ctx, bool *link_diverged) {
 
 bool VX3_VoxelyzeKernel::isAnyLinkDiverged() const {
     if (ctx.links.size() > 0) {
-        thrust::device_vector<bool> link_diverged(ctx.links.size());
         auto size = getGridAndBlockSize(checkLinkDivergence, ctx.links.size());
-        checkLinkDivergence<<<size.first, size.second>>>(
-            ctx, thrust::device_pointer_cast(link_diverged.data()).get());
+        checkLinkDivergence<<<size.first, size.second, 0, stream>>>(ctx,
+                                                                    (bool *)d_reduce1);
         CUDA_CHECK_AFTER_CALL();
-        VcudaDeviceSynchronize();
-        return thrust::any_of(link_diverged.begin(), link_diverged.end(),
-                              thrust::identity<bool>());
+        return reduce<bool, orReduce<bool>>(h_reduce_output, d_reduce1, d_reduce2,
+                                            d_reduce1, ctx.links.size(), stream, false);
     } else
         return false;
 }
@@ -156,23 +158,21 @@ __global__ void computeMassDotPosition(VX3_Context ctx, Vfloat *dot_x, Vfloat *d
 
 Vec3f VX3_VoxelyzeKernel::computeCurrentCenterOfMass() const {
     size_t v_num = ctx.voxels.size();
-    thrust::device_vector<Vfloat> dot_x(v_num), dot_y(v_num), dot_z(v_num), mass(v_num);
+    auto start = (Vfloat *)d_reduce1;
+    Vfloat *dot_x = start, *dot_y = start + v_num, *dot_z = start + v_num * 2,
+           *mass = start + v_num * 3;
     auto size = getGridAndBlockSize(computeMassDotPosition, ctx.voxels.size());
-    computeMassDotPosition<<<size.first, size.second>>>(
-        ctx, thrust::device_pointer_cast(dot_x.data()).get(),
-        thrust::device_pointer_cast(dot_y.data()).get(),
-        thrust::device_pointer_cast(dot_z.data()).get(),
-        thrust::device_pointer_cast(mass.data()).get());
+    computeMassDotPosition<<<size.first, size.second, 0, stream>>>(ctx, dot_x, dot_y,
+                                                                   dot_z, mass);
     CUDA_CHECK_AFTER_CALL();
-    VcudaDeviceSynchronize();
-    Vfloat dot_x_sum =
-        thrust::reduce(dot_x.begin(), dot_x.end(), (Vfloat)0, thrust::plus<Vfloat>());
-    Vfloat dot_y_sum =
-        thrust::reduce(dot_y.begin(), dot_y.end(), (Vfloat)0, thrust::plus<Vfloat>());
-    Vfloat dot_z_sum =
-        thrust::reduce(dot_z.begin(), dot_z.end(), (Vfloat)0, thrust::plus<Vfloat>());
-    Vfloat mass_sum =
-        thrust::reduce(mass.begin(), mass.end(), (Vfloat)0, thrust::plus<Vfloat>());
+    auto dot_x_sum = reduce<Vfloat, sumReduce<Vfloat>>(h_reduce_output, dot_x, d_reduce2,
+                                                       dot_x, v_num, stream);
+    auto dot_y_sum = reduce<Vfloat, sumReduce<Vfloat>>(h_reduce_output, dot_y, d_reduce2,
+                                                       dot_y, v_num, stream);
+    auto dot_z_sum = reduce<Vfloat, sumReduce<Vfloat>>(h_reduce_output, dot_z, d_reduce2,
+                                                       dot_z, v_num, stream);
+    auto mass_sum = reduce<Vfloat, sumReduce<Vfloat>>(h_reduce_output, mass, d_reduce2,
+                                                      mass, v_num, stream);
     if (mass_sum == 0)
         return {};
     return {dot_x_sum / mass_sum, dot_y_sum / mass_sum, dot_z_sum / mass_sum};
@@ -208,19 +208,16 @@ std::pair<int, Vfloat> VX3_VoxelyzeKernel::computeTargetCloseness() const {
         return std::make_pair(0, 0);
     Vfloat radius = max_dist_in_voxel_lengths_to_count_as_pair * vox_size;
 
-    thrust::device_vector<int> voxel_num_close_pairs(target_num);
-    thrust::device_vector<Vfloat> closeness(target_num);
+    auto voxel_num_close_pairs = (int *)d_reduce1;
+    auto closeness = (Vfloat *)(voxel_num_close_pairs + target_num);
     auto size = getGridAndBlockSize(computeTargetDistances, target_num);
-    computeTargetDistances<<<size.first, size.second>>>(
-        *this, radius, thrust::device_pointer_cast(voxel_num_close_pairs.data()).get(),
-        thrust::device_pointer_cast(closeness.data()).get());
-    CUDA_CHECK_AFTER_CALL();
-    VcudaDeviceSynchronize();
+    computeTargetDistances<<<size.first, size.second, 0, stream>>>(
+        *this, radius, voxel_num_close_pairs, closeness);
     int total_close_pairs =
-        thrust::reduce(voxel_num_close_pairs.begin(), voxel_num_close_pairs.end(), 0,
-                       thrust::plus<int>());
-    Vfloat total_closeness = thrust::reduce(closeness.begin(), closeness.end(), (Vfloat)0,
-                                            thrust::plus<Vfloat>());
+        reduce<int, sumReduce<int>>(h_reduce_output, voxel_num_close_pairs, d_reduce2,
+                                    voxel_num_close_pairs, target_num, stream);
+    Vfloat total_closeness = reduce<Vfloat, sumReduce<Vfloat>>(
+        h_reduce_output, closeness, d_reduce2, closeness, target_num, stream);
     return std::make_pair(total_close_pairs, total_closeness);
 }
 
@@ -228,22 +225,18 @@ std::pair<int, Vfloat> VX3_VoxelyzeKernel::computeTargetCloseness() const {
  * VX3_VoxelyzeKernel::init
  *****************************************************************************/
 void VX3_VoxelyzeKernel::init(Vfloat dt_, Vfloat rescale_) {
-    if (dt_ < 0) {
-        recommended_time_step = recommendedTimeStep();
-        if (recommended_time_step < 1e-3) {
-            std::cout << "Warning: recommended_time_step is zero." << std::endl;
-            recommended_time_step = 1e-3;
-        }
-        dt = dt_frac * recommended_time_step;
-    } else {
-        dt = dt_;
-        recommended_time_step = dt_;
-        dt_frac = 1;
-        std::cout
-            << "dt is manually specified, adjusting recommended_time_step and dt_frac"
-            << std::endl;
-    }
+
     rescale = rescale_;
+    dt = dt_;
+    recommended_time_step = dt_;
+    if (dt_ <= 0) {
+        is_dt_dynamic = true;
+        recommended_time_step = recommendedTimeStep();
+        dt = dt_frac * recommended_time_step;
+    }
+
+    // dt may change dynamically (if calling doTimeStep with dt = -1),
+    // only use the first value to
     real_step_size = int(record_step_size / (10000.0 * dt)) + 1;
     current_center_of_mass = computeCurrentCenterOfMass();
     initial_center_of_mass = current_center_of_mass;
@@ -252,19 +245,44 @@ void VX3_VoxelyzeKernel::init(Vfloat dt_, Vfloat rescale_) {
 /*****************************************************************************
  * VX3_VoxelyzeKernel::doTimeStep
  *****************************************************************************/
-__global__ void update(VX3_VoxelyzeKernel kernel, bool save_frame) {
+// When the max number of links/voxels is smaller than max allowed block size
+// (i.e. fits into one block), use this function to reduce kernel launch cost
+__global__ void update_combined(VX3_VoxelyzeKernel kernel, bool save_frame) {
+    // FIXME: I changed the order of update and moved voxel temperature
+    //  update to the last to avoid confliction with link updates
     kernel.updateLinks();
-    kernel.updateVoxelTemperature();
+    __syncthreads();
     kernel.updateVoxels();
+    kernel.updateVoxelTemperature();
     // save_frame is used to override record_step_size in the configuration file
     if (save_frame and kernel.record_step_size and
         kernel.step % kernel.real_step_size == 0)
         kernel.saveRecordFrame();
 }
 
-bool VX3_VoxelyzeKernel::doTimeStep(int divergence_check_interval, bool save_frame) {
-    if (dt == 0)
-        return false;
+__global__ void update_separate_links(VX3_VoxelyzeKernel kernel) { kernel.updateLinks(); }
+
+__global__ void update_separate_voxels(VX3_VoxelyzeKernel kernel, bool save_frame) {
+    kernel.updateVoxels();
+    kernel.updateVoxelTemperature();
+    // save_frame is used to override record_step_size in the configuration file
+    if (save_frame and kernel.record_step_size and
+        kernel.step % kernel.real_step_size == 0)
+        kernel.saveRecordFrame();
+}
+
+bool VX3_VoxelyzeKernel::doTimeStep(int dt_update_interval, int divergence_check_interval,
+                                    bool save_frame) {
+    if (is_dt_dynamic) {
+        if (step % dt_update_interval == 0) {
+            recommended_time_step = recommendedTimeStep();
+            if (recommended_time_step < 1e-10) {
+                std::cout << "Warning: recommended_time_step is zero." << std::endl;
+                recommended_time_step = 1e-10;
+            }
+            dt = dt_frac * recommended_time_step;
+        }
+    }
 
     if (step % divergence_check_interval == 0 and isAnyLinkDiverged())
         return false;
@@ -274,12 +292,19 @@ bool VX3_VoxelyzeKernel::doTimeStep(int divergence_check_interval, bool save_fra
         save_frame and record_step_size and step % real_step_size == 0;
     if (should_save_frame)
         adjustRecordFrameStorage(frame_num + 1);
-    auto size = getGridAndBlockSize(update, MAX(ctx.voxels.size(), ctx.links.size()));
-    update<<<size.first, size.second>>>(*this, save_frame);
+    // See if it fits into one block
+    auto size =
+        getGridAndBlockSize(update_combined, MAX(ctx.voxels.size(), ctx.links.size()));
+    if (size.first == 1) {
+        update_combined<<<size.first, size.second, 0, stream>>>(*this, save_frame);
+    } else {
+        size = getGridAndBlockSize(update_separate_links, ctx.links.size());
+        update_separate_links<<<size.first, size.second, 0, stream>>>(*this);
+        size = getGridAndBlockSize(update_separate_voxels, ctx.voxels.size());
+        update_separate_voxels<<<size.first, size.second, 0, stream>>>(*this, save_frame);
+    }
     if (should_save_frame)
         frame_num++;
-    CUDA_CHECK_AFTER_CALL();
-    VcudaDeviceSynchronize();
 
     int cycle_step = FLOOR(temp_period, dt);
     if (step % cycle_step == 0) {
@@ -299,31 +324,40 @@ void VX3_VoxelyzeKernel::adjustRecordFrameStorage(size_t required_size) {
         VX3_SimulationLinkRecord *new_d_link_record;
         VX3_SimulationVoxelRecord *new_d_voxel_record;
         size_t new_frame_capacity = frame_storage_size + ALLOCATE_FRAME_NUM;
-        VcudaMalloc(&new_d_steps, sizeof(unsigned long) * new_frame_capacity);
-        VcudaMalloc(&new_d_time_points, sizeof(Vfloat) * new_frame_capacity);
-        VcudaMalloc(&new_d_link_record, sizeof(VX3_SimulationLinkRecord) *
-                                            ctx.links.size() * new_frame_capacity);
-        VcudaMalloc(&new_d_voxel_record, sizeof(VX3_SimulationVoxelRecord) *
-                                             ctx.voxels.size() * new_frame_capacity);
+        VcudaStreamSynchronize(stream);
+        VcudaMallocAsync(&new_d_steps, sizeof(unsigned long) * new_frame_capacity,
+                         stream);
+        VcudaMallocAsync(&new_d_time_points, sizeof(Vfloat) * new_frame_capacity, stream);
+        VcudaMallocAsync(&new_d_link_record,
+                         sizeof(VX3_SimulationLinkRecord) * ctx.links.size() *
+                             new_frame_capacity,
+                         stream);
+        VcudaMallocAsync(&new_d_voxel_record,
+                         sizeof(VX3_SimulationVoxelRecord) * ctx.voxels.size() *
+                             new_frame_capacity,
+                         stream);
 
         if (frame_storage_size > 0) {
-            VcudaMemcpy(new_d_steps, d_steps, sizeof(unsigned long) * frame_storage_size,
-                        cudaMemcpyDeviceToDevice);
-            VcudaMemcpy(new_d_time_points, d_time_points,
-                        sizeof(Vfloat) * frame_storage_size, cudaMemcpyDeviceToDevice);
-            VcudaMemcpy(new_d_link_record, d_link_record,
-                        sizeof(VX3_SimulationLinkRecord) * ctx.links.size() *
-                            frame_storage_size,
-                        cudaMemcpyDeviceToDevice);
-            VcudaMemcpy(new_d_voxel_record, d_voxel_record,
-                        sizeof(VX3_SimulationVoxelRecord) * ctx.voxels.size() *
-                            frame_storage_size,
-                        cudaMemcpyDeviceToDevice);
+            VcudaMemcpyAsync(new_d_steps, d_steps,
+                             sizeof(unsigned long) * frame_storage_size,
+                             cudaMemcpyDeviceToDevice, stream);
+            VcudaMemcpyAsync(new_d_time_points, d_time_points,
+                             sizeof(Vfloat) * frame_storage_size,
+                             cudaMemcpyDeviceToDevice, stream);
+            VcudaMemcpyAsync(new_d_link_record, d_link_record,
+                             sizeof(VX3_SimulationLinkRecord) * ctx.links.size() *
+                                 frame_storage_size,
+                             cudaMemcpyDeviceToDevice, stream);
+            VcudaMemcpyAsync(new_d_voxel_record, d_voxel_record,
+                             sizeof(VX3_SimulationVoxelRecord) * ctx.voxels.size() *
+                                 frame_storage_size,
+                             cudaMemcpyDeviceToDevice, stream);
         }
-        VcudaFree(d_steps);
-        VcudaFree(d_time_points);
-        VcudaFree(d_link_record);
-        VcudaFree(d_voxel_record);
+        VcudaFreeAsync(d_steps, stream);
+        VcudaFreeAsync(d_time_points, stream);
+        VcudaFreeAsync(d_link_record, stream);
+        VcudaFreeAsync(d_voxel_record, stream);
+        VcudaStreamSynchronize(stream);
         d_steps = new_d_steps;
         d_time_points = new_d_time_points;
         d_link_record = new_d_link_record;
@@ -368,7 +402,7 @@ __device__ void VX3_VoxelyzeKernel::updateLinks() {
             return;
         if (L_G(tid, is_detached))
             return;
-        VX3_Link::updateForces(ctx, tid);
+        VX3_Link::timeStep(ctx, tid);
     }
 }
 

@@ -15,8 +15,8 @@ struct VX3_VoxelyzeKernel {
     /**
      * Note: memory management is done by VX3_VoxelyzeKernelManager
      */
-
     VX3_VoxelyzeKernel() = default;
+    VX3_VoxelyzeKernel(const cudaStream_t &stream) : stream(stream) {};
     Vfloat recommendedTimeStep() const;
     bool isStopConditionMet() const;
     bool isAnyLinkDiverged() const;
@@ -26,7 +26,8 @@ struct VX3_VoxelyzeKernel {
     std::pair<int, Vfloat> computeTargetCloseness() const;
 
     void init(Vfloat dt = -1.0f, Vfloat rescale = 0.001);
-    bool doTimeStep(int divergence_check_interval = 100, bool save_frame = true);
+    bool doTimeStep(int dt_update_interval = 10, int divergence_check_interval = 100,
+                    bool save_frame = true);
     void adjustRecordFrameStorage(size_t required_size);
     void updateMetrics();
 
@@ -37,6 +38,9 @@ struct VX3_VoxelyzeKernel {
     __device__ void saveRecordFrame();
 
     /* data */
+    // Do not access this attribute on the device side!
+    cudaStream_t stream;
+
     // TODO: find a way to move host-side math expressions out
     /**
      * Pre-set attributes (kernel read only)
@@ -99,6 +103,7 @@ struct VX3_VoxelyzeKernel {
     Vfloat recommended_time_step = 0;
     Vfloat dt = 0;
     Vfloat rescale = 1;
+    bool is_dt_dynamic = false;
     int real_step_size = 0;
 
     Vfloat time = 0.0f; // current time of the simulation in seconds
@@ -125,7 +130,15 @@ struct VX3_VoxelyzeKernel {
     unsigned int frame_storage_size = 0;
     unsigned int frame_num = 0;
 
+    // This special memory region is a pinned host memory used to
+    // perform asynchronous copy of the reduced results
+    void *h_reduce_output = nullptr;
+
     /** Device side states and storage (kernel RW) **/
+    // These special memory regions are used for reducing results
+    // size = max(voxel_num, link_num) * sizeof(Vfloat) * 4
+    void *d_reduce1 = nullptr, *d_reduce2 = nullptr;
+
     unsigned long *d_steps = nullptr;
     Vfloat *d_time_points = nullptr;
     VX3_SimulationLinkRecord *d_link_record = nullptr;

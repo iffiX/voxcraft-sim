@@ -132,8 +132,7 @@ def test_movable_object():
 
 
 @pytest.mark.skipif(
-    "env.PYPY",
-    reason="PyPy segfaults on here. See discussion on #1413.",
+    "env.PYPY", reason="PyPy segfaults on here. See discussion on #1413.",
 )
 def test_python_builtins():
     """Test if python builtins like sum() can be used as callbacks"""

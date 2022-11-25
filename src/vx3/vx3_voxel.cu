@@ -3,23 +3,6 @@
 #include "vx3_link.h"
 #include "vx3_voxel_material.h"
 #include "vx3_voxelyze_kernel.cuh"
-#include <vector>
-
-//__device__ bool VX3_Voxel::isYielded() const {
-//    for (int i = 0; i < 6; i++) {
-//        if (links[i] && links[i]->isYielded())
-//            return true;
-//    }
-//    return false;
-//}
-//
-//__device__ bool VX3_Voxel::isFailed() const {
-//    for (int i = 0; i < 6; i++) {
-//        if (links[i] && links[i]->isFailed())
-//            return true;
-//    }
-//    return false;
-//}
 
 void VX3_Voxel::init(const VX3_InitContext &ictx) {
     // Currently no need to compute anything
@@ -30,26 +13,28 @@ __device__ void VX3_Voxel::timeStep(VX3_VoxelyzeKernel &k, Vindex voxel, Vfloat 
     auto &ctx = k.ctx;
     // http://klas-physics.googlecode.com/svn/trunk/src/general/Integrator.cpp (reference)
     V_S(previous_dt, dt);
-    if (dt == 0.0f)
+    if (dt == VF(0.0))
         return;
 
     // Translation
-    Vec3f cur_force = force(ctx, voxel);
+    Vec3f cur_force = force(ctx, voxel, k.grav_acc);
+    // Not implemented
+    //    // Clear contact force
+    //    V_S(contact_force, Vec3f());
+    //    // Clear cilia force
+    //    V_S(cilia_force, Vec3f());
 
     // Apply Force Field
     auto position = V_G(position);
     cur_force.x += k.force_field.x_forcefield(
-        position.x, position.y, position.z, (Vfloat)k.collision_count,
-        current_time, k.recent_angle, k.target_closeness,
-        k.num_close_pairs, (int)ctx.voxels.size());
+        position.x, position.y, position.z, (Vfloat)k.collision_count, current_time,
+        k.recent_angle, k.target_closeness, k.num_close_pairs, (int)ctx.voxels.size());
     cur_force.y += k.force_field.y_forcefield(
-        position.x, position.y, position.z, (Vfloat)k.collision_count,
-        current_time, k.recent_angle, k.target_closeness,
-        k.num_close_pairs, (int)ctx.voxels.size());
+        position.x, position.y, position.z, (Vfloat)k.collision_count, current_time,
+        k.recent_angle, k.target_closeness, k.num_close_pairs, (int)ctx.voxels.size());
     cur_force.z += k.force_field.z_forcefield(
-        position.x, position.y, position.z, (Vfloat)k.collision_count,
-        current_time, k.recent_angle, k.target_closeness,
-        k.num_close_pairs, (int)ctx.voxels.size());
+        position.x, position.y, position.z, (Vfloat)k.collision_count, current_time,
+        k.recent_angle, k.target_closeness, k.num_close_pairs, (int)ctx.voxels.size());
 
     Vec3f fric_force = cur_force;
 
@@ -61,7 +46,7 @@ __device__ void VX3_Voxel::timeStep(VX3_VoxelyzeKernel &k, Vindex voxel, Vfloat 
     fric_force = cur_force - fric_force;
 
     // assert non QNAN
-    // assert(not isnan(cur_force.x) && not isnan(cur_force.y) && not isnan(cur_force.z));
+    assert(not isnan(cur_force.x) && not isnan(cur_force.y) && not isnan(cur_force.z));
 
     Vec3f _linear_momentum = V_G(linear_momentum);
     _linear_momentum += cur_force * dt;
@@ -80,7 +65,7 @@ __device__ void VX3_Voxel::timeStep(VX3_VoxelyzeKernel &k, Vindex voxel, Vfloat 
         Vfloat work = fric_force.x * translate.x + fric_force.y * translate.y;
 
         // horizontal kinetic energy
-        Vfloat hKe = (Vfloat)0.5 * VM_G(V_G(voxel_material), mass_inverse) *
+        Vfloat hKe = VF(0.5) * VM_G(V_G(voxel_material), mass_inverse) *
                      (_linear_momentum.x * _linear_momentum.x +
                       _linear_momentum.y * _linear_momentum.y);
         if (hKe + work <= 0) {
@@ -117,60 +102,19 @@ __device__ void VX3_Voxel::timeStep(VX3_VoxelyzeKernel &k, Vindex voxel, Vfloat 
         }
     }
 
-    V_S(poissons_strain_invalid, true);
-
     //    if (k.enable_signals) {
     //        propagateSignal(ctx, voxel, current_time);
     //        packMaker(ctx, voxel, current_time);
     //        localSignalDecay(ctx, voxel, current_time);
     //    }
-
+    V_S(poissons_strain, strain(ctx, voxel, true));
     V_S(nnn_offset, cornerOffset(ctx, voxel, NNN));
     V_S(ppp_offset, cornerOffset(ctx, voxel, PPP));
 }
 
 __device__ void VX3_Voxel::updateTemperature(VX3_Context &ctx, Vindex voxel,
-                                             float temperature) {
-    V_S(tempe, temperature);
-    auto links = V_G(links);
-    for (int i = 0; i < 6; i++) {
-        Vindex link = links[i];
-        if (link != NULL_INDEX)
-            VX3_Link::updateRestLength(ctx, link);
-    }
-}
-
-__device__ Vec3f VX3_Voxel::cornerPosition(VX3_Context &ctx, Vindex voxel,
-                                           VoxelCorner corner) {
-    return V_G(position) + V_G(orientation).rotateVec3D(cornerOffset(ctx, voxel, corner));
-}
-
-__device__ Vec3f VX3_Voxel::cornerOffset(VX3_Context &ctx, Vindex voxel,
-                                         VoxelCorner corner) {
-    Vec3f strains;
-    auto links = V_G(links);
-    for (int i = 0; i < 3; i++) {
-        bool pos_link = corner & (1 << (2 - i)) ? true : false;
-        Vindex link = links[2 * i + (pos_link ? 0 : 1)];
-        if (link != NULL_INDEX && not VX3_Link::isFailed(ctx, link)) {
-            strains[i] = (1.0 + VX3_Link::axialStrain(ctx, link, pos_link)) *
-                         (pos_link ? 1.0 : -1.0);
-        } else
-            strains[i] = pos_link ? 1.0 : -1.0;
-    }
-
-    return Vec3f((0.5 * baseSize(ctx, voxel)).scale(strains));
-}
-
-__device__ void VX3_Voxel::setBoolState(VX3_Context &ctx, Vindex voxel, VoxFlags flag,
-                                        bool active) {
-    active ? V_S(bool_states, V_G(bool_states) | flag)
-           : V_S(bool_states, V_G(bool_states) & ~flag);
-}
-
-__device__ bool VX3_Voxel::getBoolState(const VX3_Context &ctx, Vindex voxel,
-                                        VoxFlags flag) {
-    return V_G(bool_states) & flag ? true : false;
+                                             Vfloat temperature) {
+    V_S(temperature, temperature);
 }
 
 __device__ Vec3f VX3_Voxel::baseSize(const VX3_Context &ctx, Vindex voxel) {
@@ -178,7 +122,69 @@ __device__ Vec3f VX3_Voxel::baseSize(const VX3_Context &ctx, Vindex voxel) {
     Vfloat nom_size = VM_G(voxel_material, nom_size);
     Vfloat alpha_CTE = VM_G(voxel_material, alpha_CTE);
     auto base_size = Vec3f(nom_size, nom_size, nom_size);
-    return base_size * (1 + V_G(tempe) * alpha_CTE);
+    return base_size * (1 + V_G(temperature) * alpha_CTE);
+}
+
+__device__ Vec3f VX3_Voxel::cornerPosition(const VX3_Context &ctx, Vindex voxel,
+                                           VoxelCorner corner) {
+    return V_G(position) + V_G(orientation).rotateVec3D(cornerOffset(ctx, voxel, corner));
+}
+
+__device__ Vec3f VX3_Voxel::cornerOffset(const VX3_Context &ctx, Vindex voxel,
+                                         VoxelCorner corner) {
+    Vec3f strains;
+    auto links = V_G(links);
+    for (int i = 0; i < 3; i++) {
+        bool pos_link = corner & (1 << (2 - i)) ? true : false;
+        Vindex link = links[2 * i + (pos_link ? 0 : 1)];
+        if (link != NULL_INDEX && not VX3_Link::isFailed(ctx, link)) {
+            strains[i] = (VF(1.0) + VX3_Link::axialStrain(ctx, link, pos_link)) *
+                         (pos_link ? VF(1.0) : VF(-1.0));
+        } else
+            strains[i] = pos_link ? VF(1.0) : VF(-1.0);
+    }
+
+    return Vec3f((VF(0.5) * baseSize(ctx, voxel)).scale(strains));
+}
+
+__device__ Vfloat VX3_Voxel::transverseArea(const VX3_Context &ctx, Vindex voxel,
+                                            LinkAxis axis) {
+    Vindex voxel_material = V_G(voxel_material);
+    Vfloat size = VM_G(voxel_material, nom_size);
+    if (VM_G(voxel_material, nu) == 0)
+        return size * size;
+
+    Vec3f ps = V_G(poissons_strain);
+
+    switch (axis) {
+    case X_AXIS:
+        return size * size * (VF(1) + ps.y) * (VF(1) + ps.z);
+    case Y_AXIS:
+        return size * size * (VF(1) + ps.x) * (VF(1) + ps.z);
+    case Z_AXIS:
+        return size * size * (VF(1) + ps.x) * (VF(1) + ps.y);
+    default:
+        return size * size;
+    }
+}
+
+__device__ Vfloat VX3_Voxel::transverseStrainSum(const VX3_Context &ctx, Vindex voxel,
+                                                 LinkAxis axis) {
+    if (VM_G(V_G(voxel_material), nu) == 0)
+        return 0;
+
+    Vec3f ps = V_G(poissons_strain);
+
+    switch (axis) {
+    case X_AXIS:
+        return ps.y + ps.z;
+    case Y_AXIS:
+        return ps.x + ps.z;
+    case Z_AXIS:
+        return ps.x + ps.y;
+    default:
+        return VF(0.0);
+    }
 }
 
 __device__ Vfloat VX3_Voxel::floorPenetration(const VX3_Context &ctx, Vindex voxel) {
@@ -186,6 +192,147 @@ __device__ Vfloat VX3_Voxel::floorPenetration(const VX3_Context &ctx, Vindex vox
     Vfloat nom_size = VM_G(voxel_material, nom_size);
     Vfloat z = V_G(position).z;
     return baseSizeAverage(ctx, voxel) / 2 - nom_size / 2 - z;
+}
+
+__device__ Vec3f VX3_Voxel::force(const VX3_Context &ctx, Vindex voxel, Vfloat grav_acc) {
+    Vindex voxel_material = V_G(voxel_material);
+
+    // forces from internal bonds
+    Vec3f total_force;
+    auto links = V_G(links);
+    for (int i = 0; i < 6; i++) {
+        Vindex link = links[i];
+        if (link != NULL_INDEX) {
+            if (isLinkDirectionNegative((LinkDirection)i))
+                total_force += L_G(link, force_neg);
+            else
+                total_force += L_G(link, force_pos);
+        }
+    }
+
+    // from local to global coordinates
+    total_force = V_G(orientation).rotateVec3D(total_force);
+
+    // assert non QNAN
+    assert(not isnan(total_force.x) && not isnan(total_force.y) &&
+           not isnan(total_force.z));
+
+    // other forces
+    // global damping f-cv
+    total_force -= velocity(ctx, voxel) *
+                   VX3_VoxelMaterial::globalDampingTranslateC(ctx, voxel_material);
+
+    // gravity, according to f=mg
+    total_force.z += VX3_VoxelMaterial::gravityForce(ctx, voxel_material, grav_acc);
+
+    // Not implemented
+    //    total_force -= V_G(contact_force);
+    //    total_force += V_G(cilia_force) * VM_G(voxel_material, cilia);
+    return total_force;
+}
+
+__device__ Vec3f VX3_Voxel::moment(const VX3_Context &ctx, Vindex voxel) {
+    Vindex voxel_material = V_G(voxel_material);
+
+    // moments from internal bonds
+    Vec3f total_moment(0, 0, 0);
+    auto links = V_G(links);
+    for (int i = 0; i < 6; i++) {
+        Vindex link = links[i];
+        if (link != NULL_INDEX) {
+            if (isLinkDirectionNegative((LinkDirection)i))
+                total_moment += L_G(link, moment_neg);
+            else
+                total_moment += L_G(link, moment_pos);
+        }
+    }
+    total_moment = V_G(orientation).rotateVec3D(total_moment);
+
+    // other moments
+    // global damping
+    total_moment -= angularVelocity(ctx, voxel) *
+                    VX3_VoxelMaterial::globalDampingRotateC(ctx, voxel_material);
+
+    return total_moment;
+}
+
+__device__ Vec3f VX3_Voxel::strain(const VX3_Context &ctx, Vindex voxel,
+                                   bool poissons_strain) {
+    // if no connections in the positive and negative directions of a particular axis,
+    // strain is zero.
+    // if one connection in positive or negative direction of a particular
+    // axis, strain is that strain - ?? and force or constraint?
+    // if connections in both the positive and negative directions of a particular axis,
+    // strain is the average.
+
+    // Per axis strain sum
+    Vec3f axis_strain_sum;
+
+    // number of bonds in this axis (0,1,2). axes according to LinkAxis enum
+    int num_bond_axis[3] = {0};
+    bool tension[3] = {false};
+
+    auto links = V_G(links);
+    for (int i = 0; i < 6; i++) { // cycle through link directions
+        Vindex link = links[i];
+        if (link != NULL_INDEX) {
+            int axis = linkDirectionToAxis((LinkDirection)i);
+            axis_strain_sum[axis] += VX3_Link::axialStrain(
+                ctx, link, isLinkDirectionNegative((LinkDirection)i));
+            num_bond_axis[axis]++;
+        }
+    }
+    for (int i = 0; i < 3; i++) { // cycle through axes
+        if (num_bond_axis[i] == 2)
+            axis_strain_sum[i] *= VF(0.5); // average
+        if (poissons_strain) {
+            // if both sides pulling,
+            // or just one side and a fixed or forced voxel... (not implemented)
+            tension[i] = num_bond_axis[i] == 2;
+        }
+    }
+
+    if (poissons_strain) {
+        if (!(tension[0] && tension[1] && tension[2])) {
+            // if at least one isn't in tension
+            float add = 0;
+            for (int i = 0; i < 3; i++)
+                if (tension[i])
+                    add += axis_strain_sum[i];
+            float value = pow(VF(1.0) + add, -VM_G(V_G(voxel_material), nu)) - VF(1.0);
+            for (int i = 0; i < 3; i++)
+                if (!tension[i])
+                    axis_strain_sum[i] = value;
+        }
+    }
+    return axis_strain_sum;
+}
+
+__device__ Vec3f VX3_Voxel::velocity(const VX3_Context &ctx, Vindex voxel) {
+    return V_G(linear_momentum) * VM_G(V_G(voxel_material), mass_inverse);
+}
+
+__device__ Vec3f VX3_Voxel::angularVelocity(const VX3_Context &ctx, Vindex voxel) {
+    return V_G(angular_momentum) * VM_G(V_G(voxel_material), moment_inertia_inverse);
+}
+
+__device__ Vfloat VX3_Voxel::dampingMultiplier(const VX3_Context &ctx, Vindex voxel) {
+    Vindex voxel_material = V_G(voxel_material);
+    return 2 * VM_G(voxel_material, sqrt_mass) * VM_G(voxel_material, zeta_internal) /
+           V_G(previous_dt);
+}
+
+__device__ bool VX3_Voxel::isSurface(const VX3_Context &ctx, Vindex voxel) {
+    auto links = V_G(links);
+    for (int i = 0; i < 6; i++)
+        if (links[i] == NULL_INDEX)
+            return true;
+    return false;
+}
+
+__device__ bool VX3_Voxel::getBoolState(const VX3_Context &ctx, Vindex voxel,
+                                        VoxFlags flag) {
+    return V_G(bool_states) & flag ? true : false;
 }
 
 __device__ void VX3_Voxel::floorForce(VX3_Context &ctx, Vindex voxel, float dt,
@@ -234,266 +381,8 @@ __device__ void VX3_Voxel::floorForce(VX3_Context &ctx, Vindex voxel, float dt,
         setBoolState(ctx, voxel, FLOOR_STATIC_FRICTION, false);
 }
 
-__device__ Vec3f VX3_Voxel::force(VX3_Context &ctx, Vindex voxel) {
-    Vindex voxel_material = V_G(voxel_material);
-
-    // forces from internal bonds
-    Vec3f total_force;
-    auto links = V_G(links);
-    for (int i = 0; i < 6; i++) {
-        Vindex link = links[i];
-        if (link != NULL_INDEX) {
-            if (isLinkDirectionNegative((LinkDirection)i))
-                total_force += L_G(link, force_neg);
-            else
-                total_force += L_G(link, force_pos);
-        }
-    }
-
-    // from local to global coordinates
-    total_force = V_G(orientation).rotateVec3D(total_force);
-
-    // assert non QNAN
-    // assert(not isnan(total_force.x) && not isnan(total_force.y) && not isnan(total_force.z));
-
-    // other forces
-    // global damping f-cv
-    total_force -= velocity(ctx, voxel) *
-                   VX3_VoxelMaterial::globalDampingTranslateC(ctx, voxel_material);
-    // gravity, according to f=mg
-    // TODO: add grav_acc
-    total_force.z += VX3_VoxelMaterial::gravityForce(ctx, voxel_material);
-
-    total_force -= V_G(contact_force);
-    // Clear contact force
-    V_S(contact_force, Vec3f());
-
-    total_force += V_G(cilia_force) * VM_G(voxel_material, cilia);
-    // Clear cilia force
-    V_S(cilia_force, Vec3f());
-
-    return total_force;
-}
-
-__device__ Vec3f VX3_Voxel::moment(VX3_Context &ctx, Vindex voxel) {
-    Vindex voxel_material = V_G(voxel_material);
-
-    // moments from internal bonds
-    Vec3f total_moment(0, 0, 0);
-    auto links = V_G(links);
-    for (int i = 0; i < 6; i++) {
-        Vindex link = links[i];
-        if (link != NULL_INDEX) {
-            if (isLinkDirectionNegative((LinkDirection)i))
-                total_moment += L_G(link, moment_neg);
-            else
-                total_moment += L_G(link, moment_pos);
-        }
-    }
-    total_moment = V_G(orientation).rotateVec3D(total_moment);
-
-    // other moments
-    // global damping
-    total_moment -= angularVelocity(ctx, voxel) *
-                    VX3_VoxelMaterial::globalDampingRotateC(ctx, voxel_material);
-    return total_moment;
-}
-
-__device__ Vec3f VX3_Voxel::strain(VX3_Context &ctx, Vindex voxel, bool poissons_strain) {
-    // if no connections in the positive and negative directions of a particular axis,
-    // strain is zero if one connection in positive or negative direction of a particular
-    // axis, strain is that strain - ?? and force or constraint? if connections in both
-    // the positive and negative directions of a particular axis, strain is the average.
-
-    // intermediate strain return value. axes according to LinkAxis enum
-    Vec3f int_strain_return;
-
-
-    // number of bonds in this axis (0,1,2). axes according to LinkAxis enum
-    int num_bond_axis[3] = {0};
-    bool tension[3] = {false};
-
-    auto links = V_G(links);
-    for (int i = 0; i < 6; i++) { // cycle through link directions
-        Vindex link = links[i];
-        if (link != NULL_INDEX) {
-            int axis = linkDirectionToAxis((LinkDirection)i);
-            int_strain_return[axis] += VX3_Link::axialStrain(
-                ctx, link, isLinkDirectionNegative((LinkDirection)i));
-            num_bond_axis[axis]++;
-        }
-    }
-    for (int i = 0; i < 3; i++) { // cycle through axes
-        if (num_bond_axis[i] == 2)
-            int_strain_return[i] *= 0.5f; // average
-        if (poissons_strain) {
-            // if both sides pulling,
-            // or just one side and a fixed or forced voxel... (not implemented)
-            tension[i] = num_bond_axis[i] == 2;
-        }
-    }
-
-    if (poissons_strain) {
-        if (!(tension[0] && tension[1] &&
-              tension[2])) { // if at least one isn't in tension
-            float add = 0;
-            for (int i = 0; i < 3; i++)
-                if (tension[i])
-                    add += int_strain_return[i];
-            float value = pow(1.0f + add, -VM_G(V_G(voxel_material), nu)) - 1.0f;
-            for (int i = 0; i < 3; i++)
-                if (!tension[i])
-                    int_strain_return[i] = value;
-        }
-    }
-
-    return int_strain_return;
-}
-
-__device__ Vec3f VX3_Voxel::poissonsStrain(VX3_Context &ctx, Vindex voxel) {
-    if (V_G(poissons_strain_invalid)) {
-        V_S(poissons_strain, strain(ctx, voxel, true));
-        V_S(poissons_strain_invalid, false);
-    }
-    return V_G(poissons_strain);
-}
-
-__device__ Vfloat VX3_Voxel::transverseArea(VX3_Context &ctx, Vindex voxel,
-                                            LinkAxis axis) {
-    Vindex voxel_material = V_G(voxel_material);
-    Vfloat size = VM_G(voxel_material, nom_size);
-    if (VM_G(voxel_material, nu) == 0)
-        return size * size;
-
-    Vec3f ps = poissonsStrain(ctx, voxel);
-
-    switch (axis) {
-    case X_AXIS:
-        return (Vfloat)(size * size * (1 + ps.y) * (1 + ps.z));
-    case Y_AXIS:
-        return (Vfloat)(size * size * (1 + ps.x) * (1 + ps.z));
-    case Z_AXIS:
-        return (Vfloat)(size * size * (1 + ps.x) * (1 + ps.y));
-    default:
-        return size * size;
-    }
-}
-
-__device__ Vfloat VX3_Voxel::transverseStrainSum(VX3_Context &ctx, Vindex voxel,
-                                                 LinkAxis axis) {
-    if (VM_G(V_G(voxel_material), nu) == 0)
-        return 0;
-
-    Vec3f ps = poissonsStrain(ctx, voxel);
-
-    switch (axis) {
-    case X_AXIS:
-        return ps.y + ps.z;
-    case Y_AXIS:
-        return ps.x + ps.z;
-    case Z_AXIS:
-        return ps.x + ps.y;
-    default:
-        return 0.0f;
-    }
-}
-
-//__device__ void VX3_Voxel::receiveSignal(double signalValue, double activeTime,
-//                                         bool force) {
-//    if (!force) {
-//        if (inactiveUntil > activeTime)
-//            return;
-//    }
-//    if (signalValue < 0.1) {
-//        // lower than threshold, simply ignore.
-//        return;
-//    }
-//
-//    // if received a signal, this cell will activate at activeTime, and before that, no
-//    // need to receive another signal.
-//    inactiveUntil = activeTime + mat->inactivePeriod;
-//
-//    localSignal = signalValue;
-//    // VX3_Signal *s = new VX3_Signal();
-//    d_signal.value = signalValue * mat->signalValueDecay;
-//    if (d_signal.value < 0.1)
-//        d_signal.value = 0;
-//    d_signal.activeTime = activeTime;
-//    // d_signals.push_back(s);
-//    // InsertSignalQueue(signalValue, time + mat->signalTimeDelay);
-//}
-//__device__ void VX3_Voxel::propagateSignal(double currentTime) {
-//    // first one in queue, check the time
-//    // if (inactiveUntil > time)
-//    //     return;
-//    if (d_signal.activeTime > currentTime)
-//        return;
-//    if (d_signal.value < 0.1) {
-//        return;
-//    }
-//    for (int i = 0; i < 6; i++) {
-//        if (links[i]) {
-//            if (links[i]->pVNeg == this) {
-//                links[i]->pVPos->receiveSignal(d_signal.value,
-//                                               currentTime + mat->signalTimeDelay,
-//                                               false);
-//            } else {
-//                links[i]->pVNeg->receiveSignal(d_signal.value,
-//                                               currentTime + mat->signalTimeDelay,
-//                                               false);
-//            }
-//        }
-//    }
-//
-//    d_signal.value = 0;
-//    d_signal.activeTime = 0;
-//    inactiveUntil = currentTime + 2 * mat->signalTimeDelay + mat->inactivePeriod;
-//    // if (s)
-//    //     delete s;
-//    //     // printf("%f) delete s. this=%p. d_signals.size() %d. \n",time, this,
-//    //     d_signals.size() );
-//}
-
-//__device__ void VX3_Voxel::packMaker(double currentTime) {
-//    if (!mat->isPaceMaker)
-//        return;
-//    if (packmakerNextPulse > currentTime)
-//        return;
-//
-//    receiveSignal(100, currentTime, true);
-//    packmakerNextPulse = currentTime + mat->PaceMakerPeriod;
-//}
-//
-//__device__ void VX3_Voxel::localSignalDecay(double currentTime) {
-//    if (localSignaldt > currentTime)
-//        return;
-//    if (localSignal < 0.1) {
-//        // lower than threshold, simply ignore.
-//        localSignal = 0;
-//    } else {
-//        localSignal = localSignal * 0.9;
-//        localSignaldt = currentTime + 0.01;
-//    }
-//}
-
-__device__ Vec3f VX3_Voxel::velocity(const VX3_Context &ctx, Vindex voxel) {
-    return V_G(linear_momentum) * VM_G(V_G(voxel_material), mass_inverse);
-}
-
-__device__ Vec3f VX3_Voxel::angularVelocity(const VX3_Context &ctx, Vindex voxel) {
-    return V_G(angular_momentum) * VM_G(V_G(voxel_material), moment_inertia_inverse);
-}
-
-__device__ Vfloat VX3_Voxel::dampingMultiplier(const VX3_Context &ctx, Vindex voxel) {
-    Vindex voxel_material = V_G(voxel_material);
-    return 2 * VM_G(voxel_material, moment_inertia_inverse) *
-           VM_G(voxel_material, zeta_internal) / V_G(previous_dt);
-}
-
-__device__ bool VX3_Voxel::isSurface(const VX3_Context &ctx, Vindex voxel) {
-    auto links = V_G(links);
-    for (int i = 0; i< 6; i++)
-        if (links[i] == NULL_INDEX)
-            return true;
-    return false;
+__device__ void VX3_Voxel::setBoolState(VX3_Context &ctx, Vindex voxel, VoxFlags flag,
+                                        bool active) {
+    active ? V_S(bool_states, V_G(bool_states) | flag)
+           : V_S(bool_states, V_G(bool_states) & ~flag);
 }

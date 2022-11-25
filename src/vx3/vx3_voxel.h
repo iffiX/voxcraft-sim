@@ -20,6 +20,8 @@ class VX3_Voxel {
     /*****************************************************************
      * Host side methods
      *****************************************************************/
+    //!< Initialize, check pre-set values, and updates all pos-set values.
+    //!< This function is called by the kernel manager.
     void init(const VX3_InitContext &ictx);
 
     /*****************************************************************
@@ -40,15 +42,7 @@ class VX3_Voxel {
     //!< maintaned without subsequent determines the
     //!< amount of scaling from the temperature
     __device__ static void updateTemperature(VX3_Context &ctx, Vindex voxel,
-                                             float temperature);
-
-    //!< Set/Clear a bool state flag
-    __device__ static void setBoolState(VX3_Context &ctx, Vindex voxel, VoxFlags flag,
-                                        bool active);
-
-    //!< Get a bool state flag
-    __device__ static bool getBoolState(const VX3_Context &ctx, Vindex voxel,
-                                        VoxFlags flag);
+                                             Vfloat temperature);
 
     //!< Returns the nominal size of this voxel (LCS) accounting for any
     //!< specified temperature and external actuation. Specifically, returns
@@ -65,6 +59,20 @@ class VX3_Voxel {
         return baseSize(ctx, voxel)[axis];
     }
 
+    //!< Returns the deformed location of the voxel corner
+    //!< in the specified corner in the global coordinate
+    //!< system (GCS). Essentially cornerOffset() with the
+    //!< voxel's current global position/rotation applied.
+    __device__ static Vec3f cornerPosition(const VX3_Context &ctx, Vindex voxel,
+                                           VoxelCorner corner);
+
+    //!< Returns the deformed location of the voxel corner in the
+    //!< specified corner in the local voxel coordinate system (LCS).
+    //!< Used to draw the deformed voxel in the correct position
+    //!< relative to the position().
+    __device__ static Vec3f cornerOffset(const VX3_Context &ctx, Vindex voxel,
+                                         VoxelCorner corner);
+
     //!< Returns the average nominal size of the voxel in a zero-stress (no
     //!< force) state. (X+Y+Z/3)
     __device__ static Vfloat baseSizeAverage(const VX3_Context &ctx, Vindex voxel) {
@@ -72,41 +80,12 @@ class VX3_Voxel {
         return base_size.mean();
     }
 
-    //!< Returns the interference (in meters) between the collision envelope
-    //!< of this voxel and the floor at Z=0. Positive numbers correspond to
-    //!< interference. If the voxel is not touching the floor 0 is returned.
-    __device__ static Vfloat floorPenetration(const VX3_Context &ctx, Vindex voxel);
-
-    // modifies pTotalForce to include the
-    // object's interaction with a floor. This
-    // should be calculated as the last step of
-    // sumForce so that pTotalForce is complete.
-    __device__ static void floorForce(VX3_Context &ctx, Vindex voxel, float dt,
-                                      Vec3f &total_force);
-
-    //!< Calculates and returns the sum of the current
-    //!< forces on this voxel. This would normally only be
-    //!< called internally, but can be used to query the
-    //!< state of a voxel for visualization or debugging.
-    __device__ static Vec3f force(VX3_Context &ctx, Vindex voxel);
-
-    //!< Calculates and returns the sum of the current
-    //!< moments on this voxel. This would normally only be
-    //!< called internally, but can be used to query the
-    //!< state of a voxel for visualization or debugging.
-    __device__ static Vec3f moment(VX3_Context &ctx, Vindex voxel);
-
-    // LCS returns voxel strain. if tensionStrain true
-    // and no actual tension in that
-    __device__ static Vec3f strain(VX3_Context &ctx, Vindex voxel, bool poissons_strain);
-    __device__ static Vec3f poissonsStrain(VX3_Context &ctx, Vindex voxel);
-
     //!< Returns the transverse area of this voxel with respect
     //!< to the specified axis. This would normally be called
     //!< only internally, but can be used to calculate the
     //!< correct relationship between force and stress for this
     //!< voxel if Poisson's ratio is non-zero.
-    __device__ static Vfloat transverseArea(VX3_Context &ctx, Vindex voxel,
+    __device__ static Vfloat transverseArea(const VX3_Context &ctx, Vindex voxel,
                                             LinkAxis axis);
 
     //!< Returns the sum of the current strain of this voxel in
@@ -114,152 +93,45 @@ class VX3_Voxel {
     //!< axis. This would normally be called only internally, but
     //!< can be used to correctly calculate stress for this voxel
     //!< if Poisson's ratio is non-zero.
-    __device__ static Vfloat transverseStrainSum(VX3_Context &ctx, Vindex voxel,
+    __device__ static Vfloat transverseStrainSum(const VX3_Context &ctx, Vindex voxel,
                                                  LinkAxis axis);
 
-    //    __device__ static void propagateSignal(VX3_Context &ctx, Vindex voxel,
-    //                                           Vfloat current_time);
-    //    __device__ static void packMaker(VX3_Context &ctx, Vindex voxel, Vfloat
-    //    current_time);
-    //    __device__ static void localSignalDecay(VX3_Context &ctx, Vindex voxel,
-    //                                            Vfloat current_time);
+    //!< Returns the interference (in meters) between the collision envelope
+    //!< of this voxel and the floor at Z=0. >=0 numbers correspond to
+    //!< interference. If the voxel is not touching the floor return a value < 0.
+    __device__ static Vfloat floorPenetration(const VX3_Context &ctx, Vindex voxel);
 
-    //    __device__ static void receiveSignal(VX3_Context &ctx, Vindex voxel, double
-    //    value,
-    //                                         double currentTime, bool force);
-    //    __device__ static void getSignal(VX3_Context &ctx, Vindex voxel, double
-    //    currentTime);
+    //!< Calculates and returns the sum of the current
+    //!< forces on this voxel. This would normally only be
+    //!< called internally, but can be used to query the
+    //!< state of a voxel for visualization or debugging.
+    __device__ static Vec3f force(const VX3_Context &ctx, Vindex voxel,
+                                  Vfloat grav_acc = -9.80665);
 
-    // physical location
-    //
-    //    //!< Returns the initial (nominal) position of this voxel.
-    //    __device__ static Vec3f originalPosition(VX3_Context &ctx, Vindex voxel);
-    //
-    //    __device__ static Vec3f displacement(VX3_Context &ctx, Vindex voxel) {
-    //        return (pos - originalPosition());
-    //    } //!< Returns the 3D displacement of this voxel from its original location
-    //      //!< in meters (GCS)/
-    //    __device__ static Vec3f size(VX3_Context &ctx, Vindex voxel) {
-    //        return cornerOffset(PPP) - cornerOffset(NNN);
-    //    } //!< Returns the current deformed size of this voxel in the local voxel
-    //      //!< coordinates system (LCS). If asymmetric forces are acting on this
-    //      //!< voxel, the voxel may not be centered on position(). Use
-    //      //!< cornerNegative() and cornerPositive() to determine this information.
+    //!< Calculates and returns the sum of the current
+    //!< moments on this voxel. This would normally only be
+    //!< called internally, but can be used to query the
+    //!< state of a voxel for visualization or debugging.
+    __device__ static Vec3f moment(const VX3_Context &ctx, Vindex voxel);
 
-    //!< Returns the deformed location of the voxel corner
-    //!< in the specified corner in the global coordinate
-    //!< system (GCS). Essentially cornerOffset() with the
-    //!< voxel's current global position/rotation applied.
-    __device__ static Vec3f cornerPosition(VX3_Context &ctx, Vindex voxel,
-                                           VoxelCorner corner);
-
-    //!< Returns the deformed location of the voxel corner in the
-    //!< specified corner in the local voxel coordinate system (LCS).
-    //!< Used to draw the deformed voxel in the correct position
-    //!< relative to the position().
-    __device__ static Vec3f cornerOffset(VX3_Context &ctx, Vindex voxel,
-                                         VoxelCorner corner);
-
-    //    __device__ static bool isInterior(VX3_Context &ctx, Vindex voxel) {
-    //        return (boolStates & SURFACE) ? true : false;
-    //    } //!< Returns true if the voxel is surrounded by other voxels on its 6
-    //      //!< coordinate faces. Returns false if 1 or more faces are exposed.
-    //    __device__ static bool isSurface() {
-    //        return !isInterior();
-    //    } //!< Convenience function to enhance code readibility. The inverse of
-    //      //!< isInterior(). Returns true 1 or more faces are exposed. Returns false
-    //      //!< if the voxel is surrounded by other voxels on its 6 coordinate faces.
-    //
-
-    //
-    //    __device__ static float orientationAngle(VX3_Context &ctx, Vindex voxel) {
-    //        return (float)orient.Angle();
-    //    } //!< Use with orientationAxis() to get the orientation of this voxel in
-    //      //!< angle/axis form. Returns the angle in radians.
-    //    __device__ static Vec3f orientationAxis(VX3_Context &ctx, Vindex voxel) {
-    //        return orient.Axis();
-    //    } //!< Use with orientationAngle() to get the orientation of this voxel in
-    //      //!< angle/axis form. Returns a unit vector in the global coordinate
-    //      //!< system (GCS).
-    //
-    //    __device__ static float displacementMagnitude(VX3_Context &ctx, Vindex voxel) {
-    //        return (float)displacement().Length();
-    //    } //!< Returns the distance (magnitude of displacement) this voxel has moved
-    //      //!< from its initial nominal position. (GCS)
-    //    __device__ static float angularDisplacementMagnitude(VX3_Context &ctx, Vindex
-    //    voxel) {
-    //        return (float)orient.Angle();
-    //    } //!< Returns the angle (magnitude of angular displacement) this voxel has
-    //      //!< rotated from its initial nominal orientation. (GCS)
+    //!< Returns voxel strain. (LCS?)
+    __device__ static Vec3f strain(const VX3_Context &ctx, Vindex voxel, bool poissons_strain);
 
     //!< Returns the 3D velocity of this voxel in m/s (GCS)
     __device__ static Vec3f velocity(const VX3_Context &ctx, Vindex voxel);
 
-    //    __device__ static float velocityMagnitude(VX3_Context &ctx, Vindex voxel) {
-    //        return (float)(linMom.Length() * mat->_massInverse);
-    //    } //!< Returns the velocity of this voxel in m/s.
-
     //!< Returns the 3D angular velocity of this voxel in rad/s (GCS)
     __device__ static Vec3f angularVelocity(const VX3_Context &ctx, Vindex voxel);
 
-    //    __device__ static float angularVelocityMagnitude(VX3_Context &ctx, Vindex voxel)
-    //    {
-    //        return (float)(angMom.Length() * mat->_momentInertiaInverse);
-    //    } //!< Returns the angular velocity of this voxel in rad/s.
-    //    __device__ static float kineticEnergy(VX3_Context &ctx, Vindex voxel) {
-    //        return (float)(0.5 * (mat->_massInverse * linMom.Length2() +
-    //                              mat->_momentInertiaInverse * angMom.Length2()));
-    //    } //!< Returms the kinetic energy of this voxel in Joules.
-    //    __device__ static float volumetricStrain(VX3_Context &ctx, Vindex voxel) {
-    //        return (float)(strain(false).x + strain(false).y + strain(false).z);
-    //    } //!< Returns the volumetric strain of the voxel according to the
-    //      //!< definition at
-    //      //!<
-    //      http://www.colorado.edu/engineering/CAS/courses.d/Structures.d/IAST.Lect05.d/IAST.Lect05.pdf
-    //    __device__ static float pressure(VX3_Context &ctx, Vindex voxel) {
-    //        return -mat->youngsModulus() * volumetricStrain() /
-    //               (3 * (1 - 2 * mat->poissonsRatio()));
-    //    } //!< Returns the engineering internal "pressure" in Pa according to the
-    //      //!< definition at
-    //      //!<
-    //      http://www.colorado.edu/engineering/CAS/courses.d/Structures.d/IAST.Lect05.d/IAST.Lect05.pdf
-
-    // material state
-    //    __device__ static bool isYielded(VX3_Context &ctx, Vindex voxel)
-    //        const; //!< Returns true if the stress in this voxel has ever exceeded
-    //               //!< the yield stress. Technically, this returns true if any of
-    //               //!< the connected links have yielded since the stress state of
-    //               //!< the voxel is never expressly calculated.
-    //    __device__ static bool isFailed(VX3_Context &ctx, Vindex voxel)
-    //        const; //!< Returns true if the stress in this voxel has ever exceeded
-    //               //!< the failure stress. Technically, this returns true if any of
-    //               //!< the connected links have failed since the stress state of
-    //               //!< the voxel is never expressly calculated.
-
-    //    __device__ static void haltMotion(VX3_Context &ctx, Vindex voxel) {
-    //        linMom = angMom = VX3_Vec3D<>(0, 0, 0);
-    //    } //!< Halts all momentum of this block. Unless fixed the voxel will
-    //      //!< continue to move in subsequent timesteps.
-    //
-
     //!< Returns the damping multiplier for this voxel. This would normally be
     //!< called only internally for the internal damping calculations.
-
     __device__ static Vfloat dampingMultiplier(const VX3_Context &ctx, Vindex voxel);
 
-    //
-    //    __device__ static void
-    //    eulerStep(VX3_Context &ctx, Vindex voxel,
-    //              float dt); // execute an euler time step at the specified dt
-    //
-    //    __device__ static void updateSurface(VX3_Context &ctx, Vindex voxel);
-    //    __device__ static void
-    //    enableCollisions(VX3_Context &ctx, Vindex voxel, bool enabled,
-    //                     float watchRadius = 0.0f); // watchRadius in voxel units
-    //    __device__ static bool isCollisionsEnabled(VX3_Context &ctx, Vindex voxel) {
-    //        return boolStates & COLLISIONS_ENABLED ? true : false;
-    //    }
     __device__ static bool isSurface(const VX3_Context &ctx, Vindex voxel);
+
+    //!< Get a bool state flag
+    __device__ static bool getBoolState(const VX3_Context &ctx, Vindex voxel,
+                                        VoxFlags flag);
 
     /**
      * Pre-set attributes
@@ -311,13 +183,10 @@ class VX3_Voxel {
     VoxState bool_states = 0;
 
     // 0 is no expansion
-    Vfloat tempe = 0;
+    Vfloat temperature = 0;
 
     // cached poissons strain
     Vec3f poissons_strain;
-
-    // flag for recomputing poissons strain.
-    bool poissons_strain_invalid = true;
 
     // remember the duration of the last timestep of this voxel
     Vfloat previous_dt = 0;
@@ -332,20 +201,35 @@ class VX3_Voxel {
 
     Vec3f cilia_force;
 
-    bool enable_attach = true;
+    bool enable_attach = false;
 
     VX3_Signal signal;
     Vfloat local_signal = 0.0;
     Vfloat local_signal_dt = 0.0;
     Vfloat packmaker_next_pulse = 0.0;
     Vfloat inactive_until = 0.0;
+
+private:
+    /*****************************************************************
+     * Device side methods
+     *****************************************************************/
+    //!< modifies pTotalForce to include the
+    //!< object's interaction with a floor. This
+    //!< should be calculated as the last step of
+    //!< sumForce so that pTotalForce is complete.
+    __device__ static void floorForce(VX3_Context &ctx, Vindex voxel, float dt,
+                                      Vec3f &total_force);
+
+    //!< Set/Clear a bool state flag
+    __device__ static void setBoolState(VX3_Context &ctx, Vindex voxel, VoxFlags flag,
+                                        bool active);
 };
 
 REFL_AUTO(type(VX3_Voxel), field(voxel_material), field(links), field(index_x),
           field(index_y), field(index_z), field(position), field(nnn_offset),
           field(ppp_offset), field(linear_momentum), field(orientation),
-          field(angular_momentum), field(bool_states), field(tempe),
-          field(poissons_strain), field(poissons_strain_invalid), field(previous_dt),
+          field(angular_momentum), field(bool_states), field(temperature),
+          field(poissons_strain), field(previous_dt),
           field(last_col_watch_position), field(amplitude), field(frequency),
           field(phase_offset), field(is_detached), field(contact_force),
           field(base_cilia_force), field(shift_cilia_force), field(cilia_force),

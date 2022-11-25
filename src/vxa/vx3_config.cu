@@ -57,7 +57,8 @@ void VX3_Config::parseSettings() {
 
     // VXA.RawPrint
     raw_print = config_tree.get<std::string>("VXA.RawPrint", "");
-    std::cout << raw_print << std::endl;
+    if (not raw_print.empty())
+        std::cout << raw_print << std::endl;
 
     // In VXA.GPU
     heap_size = max(min(config_tree.get("VXA.GPU.HeapSize", (Vfloat) 0.5), (Vfloat) 0.99), (Vfloat) 0.01);

@@ -11,8 +11,11 @@
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 #define BOUND(x, min, max) (MAX(MIN(x, max), min))
 
+#define VF(float_value) Vfloat(float_value)
+
 using Vfloat = float;
 using Vindex = unsigned int;
+using Vsize = unsigned int;
 constexpr Vindex NULL_INDEX = std::numeric_limits<Vindex>::max();
 
 //! The collision detection scheme to use if enabled.

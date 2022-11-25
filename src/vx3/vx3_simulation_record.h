@@ -59,4 +59,15 @@ struct VX3_SimulationResult {
     std::vector<Vec3f> voxel_final_positions;
 };
 
+std::string saveSimulationResult(const std::string &input_dir,
+                          const std::string &vxa_filename, const std::string &vxd_filename,
+                          const VX3_SimulationResult &result);
+
+void saveSimulationResultToFile(const std::string &output_path, const std::string &input_dir,
+                          const std::string &vxa_filename, const std::string &vxd_filename,
+                          const VX3_SimulationResult &result);
+
+std::string saveSimulationRecord(const VX3_SimulationRecord &record);
+
+void saveSimulationRecordToFile(const std::string &output_path, const VX3_SimulationRecord &record);
 #endif //VX3_SIMULATION_RECORD_H
