@@ -91,7 +91,7 @@ PYBIND11_MODULE(voxcraft, m) {
         .def_readwrite("devices", &Voxcraft::devices)
         .def_readwrite("threads_per_device", &Voxcraft::threads_per_device)
         .def("run_sims", &Voxcraft::runSims, py::arg("base_configs"),
-             py::arg("experiment_configs"), py::arg("barrier_on_init") = true);
+             py::arg("experiment_configs"), py::arg("barrier_on_init") = false);
 #ifdef VERSION_INFO
     m.attr("__version__") = VERSION_INFO;
 #else
