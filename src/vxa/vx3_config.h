@@ -65,6 +65,8 @@ struct VX3_PaletteMaterialConfig {
     Vfloat u_static;
     Vfloat u_dynamic;
 
+    Vfloat material_temp_phase;
+
     void read(const boost::property_tree::ptree &palette_material_tree);
 };
 
@@ -85,12 +87,15 @@ struct VX3_StructureConfig {
     std::vector<Vfloat> amplitudes, frequencies, phase_offsets;
     std::vector<Vec3f> base_cilia_force, shift_cilia_force;
 
+    bool has_amplitudes, has_frequencies, has_phase_offsets,
+         has_base_cilia_force, has_shift_cilia_force;
+
     void read(const boost::property_tree::ptree &structure_tree);
-    static void
+    static bool
     read_float_layer(const boost::property_tree::ptree &structure_tree,
                      const std::string &section, size_t voxel_per_layer_num,
                      std::vector<Vfloat>& layer_data);
-    static void
+    static bool
     read_vec3f_layer(const boost::property_tree::ptree &structure_tree,
                      const std::string &section, size_t voxel_per_layer_num,
                      std::vector<Vec3f>& layer_data);
