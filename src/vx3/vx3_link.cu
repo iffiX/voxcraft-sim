@@ -130,7 +130,7 @@ __device__ void VX3_Link::updateRestLength(VX3_Context &ctx, Vindex link) {
     L_S(current_rest_length, VF(0.5) * (neg_base_size + pos_base_size));
 }
 
-__device__ Quat3f VX3_Link::orientLink(VX3_Context &ctx, Vindex link) {
+__device__ void VX3_Link::orientLink(VX3_Context &ctx, Vindex link) {
     // updates pos2, angle1, angle2, and smallAngle
 
     Vec3f _pos2 = V_G(L_G(voxel_pos), position) - V_G(L_G(voxel_neg), position);
@@ -143,44 +143,79 @@ __device__ Quat3f VX3_Link::orientLink(VX3_Context &ctx, Vindex link) {
     Quat3f _angle2 = V_G(L_G(voxel_pos), orientation);
     _angle2 = toAxisX(L_G(axis), _angle2);
 
-    // keep track of the total rotation of this bond (after toAxisX())
-    Quat3f total_rot = _angle1.conjugate();
-    _pos2 = total_rot.rotateVec3D(_pos2);
-    _angle1 = Quat3f(); // zero for now...
-    _angle2 = total_rot * _angle2;
+//    // keep track of the total rotation of this bond (after toAxisX())
+//    Quat3f total_rot = _angle1.conjugate();
+//    _pos2 = total_rot.rotateVec3D(_pos2);
+//    _angle1 = Quat3f(); // zero for now...
+//    _angle2 = total_rot * _angle2;
 
-    // small angle approximation?
+//    // small angle approximation?
+//    Vfloat curr_rest_length = L_G(current_rest_length);
+//    Vfloat small_turn = (abs(_pos2.z) + abs(_pos2.y)) / _pos2.x;
+//    Vfloat extend_perc = abs(1 - _pos2.x / curr_rest_length);
+//    bool _is_small_angle = L_G(is_small_angle);
+//    if (!_is_small_angle && small_turn < SA_BOND_BEND_RAD &&
+//        extend_perc < SA_BOND_EXT_PERC) {
+//        _is_small_angle = true;
+//        setBoolState(ctx, link, LOCAL_VELOCITY_VALID, false);
+//    } else if (_is_small_angle && small_turn > HYSTERESIS_FACTOR * SA_BOND_BEND_RAD ||
+//               extend_perc > HYSTERESIS_FACTOR * SA_BOND_EXT_PERC) {
+//        _is_small_angle = false;
+//        setBoolState(ctx, link, LOCAL_VELOCITY_VALID, false);
+//    }
+//
+//    if (_is_small_angle) {
+//        // Align so Angle1 is all zeros
+//
+//        // only valid for small angles
+//        // _pos2.x -= curr_rest_length;
+//    } else {
+//        // Large angle. Align so that Pos2.y, Pos2.z are zero.
+//
+//        // get the angle to align Pos2 with the X axis
+//        _angle1.fromAngleToPosX(_pos2);
+//        total_rot = _angle1 * total_rot; // update our total rotation to reflect this
+//        _angle2 = _angle1 * _angle2;     // rotate angle2
+//        _pos2 = Vec3f(_pos2.length(), 0, 0);
+//        // _pos2 = Vec3f(_pos2.length() - curr_rest_length, 0, 0);
+//    }
+
+//    // State updates
+//    L_S(is_small_angle, _is_small_angle);
+//    L_S(is_small_angle, false);
+//
+//    L_S(angle1, _angle1);
+//    L_S(angle2, _angle2);
+//    L_S(pos2, _pos2);
+//    Vec3f angle1v = _angle1.toRotationVector();
+//    Vec3f angle2v = _angle2.toRotationVector();
+//    L_S(angle1v, angle1v);
+//    L_S(angle2v, angle2v);
+//
+//    // assert non QNAN
+//    assert(not isnan(angle1v.x) && not isnan(angle1v.y) && not isnan(angle1v.z));
+//    assert(not isnan(angle2v.x) && not isnan(angle2v.y) && not isnan(angle2v.z));
+
+    // cancel out rotation of angle1, then rotate it until pos2 is on the x axis
+    Quat3f cancel_rot = _angle1.conjugate();
+    _pos2 = cancel_rot.rotateVec3D(_pos2);
+    _angle1 = Quat3f();
+    _angle2 = cancel_rot * _angle2;
+
+    // check whether it is a small rotation (might be caused by noise)
     Vfloat curr_rest_length = L_G(current_rest_length);
     Vfloat small_turn = (abs(_pos2.z) + abs(_pos2.y)) / _pos2.x;
     Vfloat extend_perc = abs(1 - _pos2.x / curr_rest_length);
-    bool _is_small_angle = L_G(is_small_angle);
-    if (!_is_small_angle && small_turn < SA_BOND_BEND_RAD &&
-        extend_perc < SA_BOND_EXT_PERC) {
-        _is_small_angle = true;
-        setBoolState(ctx, link, LOCAL_VELOCITY_VALID, false);
-    } else if (_is_small_angle && small_turn > HYSTERESIS_FACTOR * SA_BOND_BEND_RAD ||
-               extend_perc > HYSTERESIS_FACTOR * SA_BOND_EXT_PERC) {
-        _is_small_angle = false;
-        setBoolState(ctx, link, LOCAL_VELOCITY_VALID, false);
-    }
+    bool is_small_angle = small_turn < SA_BOND_BEND_RAD && extend_perc < SA_BOND_EXT_PERC;
 
-    if (_is_small_angle) {
-        // Align so Angle1 is all zeros
+    // re-rotate angle1, angle2 and pos2
+    _angle1.fromAngleToPosX(_pos2);
+    _angle2 = _angle1 * _angle2;
+    _pos2 = Vec3f(_pos2.length(), 0, 0);
 
-        // only valid for small angles
-        // _pos2.x -= curr_rest_length;
-    } else {
-        // Large angle. Align so that Pos2.y, Pos2.z are zero.
-
-        // get the angle to align Pos2 with the X axis
-        _angle1.fromAngleToPosX(_pos2);
-        total_rot = _angle1 * total_rot; // update our total rotation to reflect this
-        _angle2 = _angle1 * _angle2;     // rotate angle2
-        _pos2 = Vec3f(_pos2.length(), 0, 0);
-        // _pos2 = Vec3f(_pos2.length() - curr_rest_length, 0, 0);
-    }
     // State updates
-    L_S(is_small_angle, _is_small_angle);
+    L_S(is_small_angle, is_small_angle);
+
     L_S(angle1, _angle1);
     L_S(angle2, _angle2);
     L_S(pos2, _pos2);
@@ -192,8 +227,6 @@ __device__ Quat3f VX3_Link::orientLink(VX3_Context &ctx, Vindex link) {
     // assert non QNAN
     assert(not isnan(angle1v.x) && not isnan(angle1v.y) && not isnan(angle1v.z));
     assert(not isnan(angle2v.x) && not isnan(angle2v.y) && not isnan(angle2v.z));
-
-    return total_rot;
 }
 
 __device__ void VX3_Link::updateForces(VX3_Context &ctx, Vindex link) {
@@ -261,40 +294,46 @@ __device__ void VX3_Link::updateForces(VX3_Context &ctx, Vindex link) {
                               -b2 * new_pos2.z - b3 * (new_angle1v.y + 2 * new_angle2v.y),
                               b2 * new_pos2.y - b3 * (new_angle1v.z + 2 * new_angle2v.z));
 
-    // local damping:
-    if (getBoolState(ctx, link, LOCAL_VELOCITY_VALID)) {
-        // if we don't have the basis for a good damping calculation,
-        // don't do any damping.
+//    // local damping:
+//    if (getBoolState(ctx, link, LOCAL_VELOCITY_VALID)) {
+//        // if we don't have the basis for a good damping calculation,
+//        // don't do any damping.
+//
+//        Vfloat sqA1 = LM_G(link_mat, sqA1), sqA2xIp = LM_G(link_mat, sqA2xIp),
+//               sqB1 = LM_G(link_mat, sqB1), sqB2xFMp = LM_G(link_mat, sqB2xFMp),
+//               sqB3xIp = LM_G(link_mat, sqB3xIp);
+//
+//        Vec3f pos_calc(sqA1 * d_pos2.x,
+//                       sqB1 * d_pos2.y - sqB2xFMp * (d_angle1.z + d_angle2.z),
+//                       sqB1 * d_pos2.z + sqB2xFMp * (d_angle1.y + d_angle2.y));
+//
+//        Vfloat voxel_neg_damping = VX3_Voxel::dampingMultiplier(ctx, L_G(voxel_neg));
+//        Vfloat voxel_pos_damping = VX3_Voxel::dampingMultiplier(ctx, L_G(voxel_pos));
+//
+//        _force_neg += voxel_neg_damping * pos_calc;
+//        _force_pos -= voxel_pos_damping * pos_calc;
+//        _moment_neg -=
+//                VF(0.5) * voxel_neg_damping *
+//                    Vec3f(-sqA2xIp * (d_angle2.x - d_angle1.x),
+//                          sqB2xFMp * d_pos2.z + sqB3xIp * (2 * d_angle1.y + d_angle2.y),
+//                          -sqB2xFMp * d_pos2.y +
+//                              sqB3xIp * (2 * d_angle1.z + d_angle2.z));
+//        _moment_pos -=
+//                VF(0.5) * voxel_pos_damping *
+//                    Vec3f(sqA2xIp * (d_angle2.x - d_angle1.x),
+//                          sqB2xFMp * d_pos2.z + sqB3xIp * (d_angle1.y + 2 * d_angle2.y),
+//                          -sqB2xFMp * d_pos2.y +
+//                              sqB3xIp * (d_angle1.z + 2 * d_angle2.z));
+//    } else {
+//        // we're good for next go-around unless something changes
+//        setBoolState(ctx, link, LOCAL_VELOCITY_VALID, true);
+//    }
 
-        Vfloat sqA1 = LM_G(link_mat, sqA1), sqA2xIp = LM_G(link_mat, sqA2xIp),
-               sqB1 = LM_G(link_mat, sqB1), sqB2xFMp = LM_G(link_mat, sqB2xFMp),
-               sqB3xIp = LM_G(link_mat, sqB3xIp);
-
-        Vec3f pos_calc(sqA1 * d_pos2.x,
-                       sqB1 * d_pos2.y - sqB2xFMp * (d_angle1.z + d_angle2.z),
-                       sqB1 * d_pos2.z + sqB2xFMp * (d_angle1.y + d_angle2.y));
-
-        Vfloat voxel_neg_damping = VX3_Voxel::dampingMultiplier(ctx, L_G(voxel_neg));
-        Vfloat voxel_pos_damping = VX3_Voxel::dampingMultiplier(ctx, L_G(voxel_pos));
-
-        _force_neg += voxel_neg_damping * pos_calc;
-        _force_pos -= voxel_pos_damping * pos_calc;
-        _moment_neg -=
-                VF(0.5) * voxel_neg_damping *
-                    Vec3f(-sqA2xIp * (d_angle2.x - d_angle1.x),
-                          sqB2xFMp * d_pos2.z + sqB3xIp * (2 * d_angle1.y + d_angle2.y),
-                          -sqB2xFMp * d_pos2.y +
-                              sqB3xIp * (2 * d_angle1.z + d_angle2.z));
-        _moment_pos -=
-                VF(0.5) * voxel_pos_damping *
-                    Vec3f(sqA2xIp * (d_angle2.x - d_angle1.x),
-                          sqB2xFMp * d_pos2.z + sqB3xIp * (d_angle1.y + 2 * d_angle2.y),
-                          -sqB2xFMp * d_pos2.y +
-                              sqB3xIp * (d_angle1.z + 2 * d_angle2.z));
-
-    } else {
-        // we're good for next go-around unless something changes
-        setBoolState(ctx, link, LOCAL_VELOCITY_VALID, true);
+    if (L_G(is_small_angle)) {
+        _force_neg *= 0.5;
+        _force_pos *= 0.5;
+        _moment_neg *= 0.5;
+        _moment_pos *= 0.5;
     }
 
     //	transform forces and moments to local voxel coordinates
@@ -312,15 +351,6 @@ __device__ void VX3_Link::updateForces(VX3_Context &ctx, Vindex link) {
     L_S(force_pos, toAxisOriginal(ax, _force_pos));
     L_S(moment_neg, toAxisOriginal(ax, _moment_neg));
     L_S(moment_pos, toAxisOriginal(ax, _moment_pos));
-
-    //    if (L_G(is_new_link)) {
-    //        // for debug
-    //        L_S(force_neg, L_G(force_neg) * 0.01);
-    //        L_S(force_pos, L_G(force_pos) * 0.01);
-    //        L_S(moment_neg, L_G(moment_neg) * 0.01);
-    //        L_S(moment_pos, L_G(moment_pos) * 0.01);
-    //        L_S(is_new_link, L_G(is_new_link) - 1);
-    //    }
 }
 
 __device__ void VX3_Link::updateTransverseInfo(VX3_Context &ctx, Vindex link) {
@@ -334,8 +364,10 @@ __device__ void VX3_Link::updateTransverseInfo(VX3_Context &ctx, Vindex link) {
                    VX3_Voxel::transverseStrainSum(ctx, voxel_pos, L_G(axis))));
 }
 
-__device__ float VX3_Link::updateStrain(VX3_Context &ctx, Vindex link,
-                                        float axial_strain) {
+__device__ Vfloat VX3_Link::updateStrain(VX3_Context &ctx, Vindex link,
+                                         Vfloat axial_strain) {
+//    if (abs(axial_strain) < 1e-5)
+//        axial_strain = 0;
     L_S(strain, axial_strain);
 
     Vindex link_material = L_G(link_material);

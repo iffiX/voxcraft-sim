@@ -102,11 +102,11 @@ class VX3_Voxel {
     __device__ static Vfloat floorPenetration(const VX3_Context &ctx, Vindex voxel);
 
     //!< Calculates and returns the sum of the current
-    //!< forces on this voxel. This would normally only be
-    //!< called internally, but can be used to query the
-    //!< state of a voxel for visualization or debugging.
-    __device__ static Vec3f force(const VX3_Context &ctx, Vindex voxel,
-                                  Vfloat grav_acc = -9.80665);
+    //!< forces (except for friction) on this voxel.
+    //!< This would normally only be called internally,
+    //!< but can be used to query the state of a voxel
+    //!< for visualization or debugging.
+    __device__ static Vec3f force(VX3_VoxelyzeKernel &k, Vindex voxel, Vfloat current_time);
 
     //!< Calculates and returns the sum of the current
     //!< moments on this voxel. This would normally only be
@@ -213,10 +213,9 @@ private:
     /*****************************************************************
      * Device side methods
      *****************************************************************/
-    //!< modifies pTotalForce to include the
+    //!< modifies total_force to include the
     //!< object's interaction with a floor. This
-    //!< should be calculated as the last step of
-    //!< sumForce so that pTotalForce is complete.
+    //!< method also updates the FLOOR_STATIC_FRICTION flag
     __device__ static void floorForce(VX3_Context &ctx, Vindex voxel, float dt,
                                       Vec3f &total_force);
 
@@ -225,14 +224,17 @@ private:
                                         bool active);
 };
 
-REFL_AUTO(type(VX3_Voxel), field(voxel_material), field(links), field(index_x),
-          field(index_y), field(index_z), field(position), field(nnn_offset),
-          field(ppp_offset), field(linear_momentum), field(orientation),
+REFL_AUTO(type(VX3_Voxel), field(index_x), field(index_y), field(index_z),
+          field(voxel_material), field(links),
+          field(amplitude), field(frequency), field(phase_offset),
+          field(base_cilia_force), field(shift_cilia_force),
+          field(initial_position), field(position),
+          field(nnn_offset), field(ppp_offset),
+          field(linear_momentum), field(orientation),
           field(angular_momentum), field(bool_states), field(temperature),
           field(poissons_strain), field(previous_dt),
-          field(last_col_watch_position), field(amplitude), field(frequency),
-          field(phase_offset), field(is_detached), field(contact_force),
-          field(base_cilia_force), field(shift_cilia_force), field(cilia_force),
+          field(is_detached), field(last_col_watch_position),
+          field(contact_force), field(cilia_force),
           field(enable_attach), field(signal), field(local_signal),
           field(local_signal_dt), field(packmaker_next_pulse), field(inactive_until))
 

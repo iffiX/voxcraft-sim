@@ -128,11 +128,11 @@ class VX3_Material {
      * The last data point is assumed to represent failure of the material.
      * The 0.2% offset method is used to calculate the yield point.
      *
-     * Restrictions on pStrainValues:
+     * Restrictions on strain_data:
         - The values must be positive and increasing in order.
         - Strains are defined in absolute numbers according to delta l / L.
 
-     * Restrictions on pStressValues:
+     * Restrictions on stress_data:
         - The values must be positive and increasing in order.
 
      * Special cases:

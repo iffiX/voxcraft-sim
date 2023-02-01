@@ -73,9 +73,9 @@ void VX3_Config::parseSettings() {
     dt_frac = config_tree.get("VXA.Simulator.Integration.DtFrac", (Vfloat)0.9);
 
     // In VXA.Simulator.Damping
-    bond_damping_z = config_tree.get("VXA.Simulator.Damping.BondDampingZ", (Vfloat)0.1);
+    bond_damping_z = config_tree.get("VXA.Simulator.Damping.BondDampingZ", (Vfloat)1.0);
     col_damping_z = config_tree.get("VXA.Simulator.Damping.ColDampingZ", (Vfloat)1.0);
-    slow_damping_z = config_tree.get("VXA.Simulator.Damping.SlowDampingZ", (Vfloat)1.0);
+    slow_damping_z = config_tree.get("VXA.Simulator.Damping.SlowDampingZ", (Vfloat)0.01);
 
     // In VXA.Simulator.StopCondition
     parseMathExpression(stop_condition_formula,

@@ -4,9 +4,9 @@
 #include "utils/vx3_def.h"
 
 #define MAX_STACK_SIZE              4
-#define MAX_EXPRESSION_TOKENS       16
+#define MAX_EXPRESSION_TOKENS       8
 
-enum VX3_MathTreeOperator : unsigned int {
+enum VX3_MathTreeOperator : uint8_t {
     mtEND,
     mtCONST,
     mtE,  // number e

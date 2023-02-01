@@ -4,6 +4,8 @@
 #include "vx3_voxel_material.h"
 #include "vx3_voxelyze_kernel.cuh"
 
+#define LINEAR_MOMENTUM_SCALE 1e5
+
 void VX3_Voxel::init(const VX3_InitContext &ictx) {
     // Currently no need to compute anything
 }
@@ -17,96 +19,62 @@ __device__ void VX3_Voxel::timeStep(VX3_VoxelyzeKernel &k, Vindex voxel, Vfloat 
         return;
 
     // Translation
-    Vec3f cur_force = force(ctx, voxel, k.grav_acc);
-    // Not implemented
-    //    // Clear contact force
-    //    V_S(contact_force, Vec3f());
-    //    // Clear cilia force
-    //    V_S(cilia_force, Vec3f());
-
-    // Apply Force Field
-    auto position = V_G(position);
-    cur_force.x += k.force_field.x_forcefield(
-        position.x, position.y, position.z, (Vfloat)k.collision_count, current_time,
-        k.recent_angle, k.target_closeness, k.num_close_pairs, (int)ctx.voxels.size());
-    cur_force.y += k.force_field.y_forcefield(
-        position.x, position.y, position.z, (Vfloat)k.collision_count, current_time,
-        k.recent_angle, k.target_closeness, k.num_close_pairs, (int)ctx.voxels.size());
-    cur_force.z += k.force_field.z_forcefield(
-        position.x, position.y, position.z, (Vfloat)k.collision_count, current_time,
-        k.recent_angle, k.target_closeness, k.num_close_pairs, (int)ctx.voxels.size());
-
-    Vec3f fric_force = cur_force;
+    Vec3f cur_force = force(k, voxel, current_time);
 
     if (k.floor_enabled) {
         // floor force needs dt to calculate threshold to
         // "stop" a slow voxel into static friction.
         floorForce(ctx, voxel, dt, cur_force);
     }
-    fric_force = cur_force - fric_force;
+
+    bool is_static = k.floor_enabled && floorPenetration(ctx, voxel) >= 0 &&
+                     getBoolState(ctx, voxel, FLOOR_STATIC_FRICTION);
 
     // assert non QNAN
     assert(not isnan(cur_force.x) && not isnan(cur_force.y) && not isnan(cur_force.z));
 
     Vec3f _linear_momentum = V_G(linear_momentum);
-    _linear_momentum += cur_force * dt;
-    V_S(linear_momentum, _linear_momentum);
+    _linear_momentum += LINEAR_MOMENTUM_SCALE * cur_force * dt;
 
     // movement of the voxel this timestep
-    Vec3f translate(_linear_momentum * (dt * VM_G(V_G(voxel_material), mass_inverse)));
+    Vec3f translate(_linear_momentum * (dt * VM_G(V_G(voxel_material), mass_inverse)) /
+                    LINEAR_MOMENTUM_SCALE);
 
-    // we need to check for friction conditions here (after calculating the translation)
+    // we need to check for friction conditions here (before updating the position)
     // and stop things accordingly
-    if (k.floor_enabled && floorPenetration(ctx, voxel) >= 0) {
-        // we must catch a slowing voxel here since it all boils down to needing
-        // access to the dt of this timestep.
+    if (is_static) {
+        // if we're in a state of static friction, zero out all horizontal motion
+        _linear_momentum.x = _linear_momentum.y = 0;
+        translate.x = translate.y = 0;
+    }
 
-        // F dot disp
-        Vfloat work = fric_force.x * translate.x + fric_force.y * translate.y;
-
-        // horizontal kinetic energy
-        Vfloat hKe = VF(0.5) * VM_G(V_G(voxel_material), mass_inverse) *
-                     (_linear_momentum.x * _linear_momentum.x +
-                      _linear_momentum.y * _linear_momentum.y);
-        if (hKe + work <= 0) {
-            // this checks for a change of direction
-            // according to the work-energy principle
-            setBoolState(ctx, voxel, FLOOR_STATIC_FRICTION, true);
-        }
-        if (getBoolState(ctx, voxel, FLOOR_STATIC_FRICTION)) {
-            // if we're in a state of static friction, zero out all horizontal motion
-            _linear_momentum.x = _linear_momentum.y = 0;
-            V_S(linear_momentum, _linear_momentum);
-            translate.x = translate.y = 0;
-        }
-    } else
-        setBoolState(ctx, voxel, FLOOR_STATIC_FRICTION, false);
-
+    V_S(linear_momentum, _linear_momentum);
     V_S(position, V_G(position) + translate);
+
     // Rotation
     Vec3f current_momentum = moment(ctx, voxel);
-    V_S(angular_momentum, V_G(angular_momentum) + current_momentum * dt);
+    Vec3f _angular_momentum = V_G(angular_momentum);
+    _angular_momentum += current_momentum * dt;
+
+    // we need to check for friction conditions here (before updating the orientation)
+    // and stop things accordingly
+
+    // It is possible to rotate the cube even if it is not moving horizontally.
+    // Imagine bending a rubber beam by pumping it, the endpoint might be static,
+    // but they are rotating.
+    //     ----
+    //   ./    \.
+
+    //    if (is_static) {
+    //        _angular_momentum = Vec3f();
+    //    }
 
     // update the orientation
-    V_S(orientation, Quat3f(V_G(angular_momentum) *
+    V_S(angular_momentum, _angular_momentum);
+    V_S(orientation, Quat3f(_angular_momentum *
                             (dt * VM_G(V_G(voxel_material), moment_inertia_inverse))) *
                          V_G(orientation));
 
-    //	we need to check for friction conditions here (after calculating the translation)
-    // and stop things accordingly
-    if (k.floor_enabled && floorPenetration(ctx, voxel) >= 0) {
-        // we must catch a slowing voxel here since it all boils down to needing access to
-        // the dt of this timestep.
-        if (getBoolState(ctx, voxel, FLOOR_STATIC_FRICTION)) {
-            V_S(angular_momentum, Vec3f());
-        }
-    }
-
-    //    if (k.enable_signals) {
-    //        propagateSignal(ctx, voxel, current_time);
-    //        packMaker(ctx, voxel, current_time);
-    //        localSignalDecay(ctx, voxel, current_time);
-    //    }
     V_S(poissons_strain, strain(ctx, voxel, true));
     V_S(nnn_offset, cornerOffset(ctx, voxel, NNN));
     V_S(ppp_offset, cornerOffset(ctx, voxel, PPP));
@@ -194,7 +162,10 @@ __device__ Vfloat VX3_Voxel::floorPenetration(const VX3_Context &ctx, Vindex vox
     return baseSizeAverage(ctx, voxel) / 2 - nom_size / 2 - z;
 }
 
-__device__ Vec3f VX3_Voxel::force(const VX3_Context &ctx, Vindex voxel, Vfloat grav_acc) {
+__device__ Vec3f VX3_Voxel::force(VX3_VoxelyzeKernel &k, Vindex voxel,
+                                  Vfloat current_time) {
+    auto &ctx = k.ctx;
+
     Vindex voxel_material = V_G(voxel_material);
 
     // forces from internal bonds
@@ -223,11 +194,19 @@ __device__ Vec3f VX3_Voxel::force(const VX3_Context &ctx, Vindex voxel, Vfloat g
                    VX3_VoxelMaterial::globalDampingTranslateC(ctx, voxel_material);
 
     // gravity, according to f=mg
-    total_force.z += VX3_VoxelMaterial::gravityForce(ctx, voxel_material, grav_acc);
+    total_force.z += VX3_VoxelMaterial::gravityForce(ctx, voxel_material, k.grav_acc);
 
-    // Not implemented
-    //    total_force -= V_G(contact_force);
-    //    total_force += V_G(cilia_force) * VM_G(voxel_material, cilia);
+    // force Field
+    auto position = V_G(position);
+    total_force.x += k.force_field.x_forcefield(
+        position.x, position.y, position.z, (Vfloat)k.collision_count, current_time,
+        k.recent_angle, k.target_closeness, k.num_close_pairs, (int)ctx.voxels.size());
+    total_force.y += k.force_field.y_forcefield(
+        position.x, position.y, position.z, (Vfloat)k.collision_count, current_time,
+        k.recent_angle, k.target_closeness, k.num_close_pairs, (int)ctx.voxels.size());
+    total_force.z += k.force_field.z_forcefield(
+        position.x, position.y, position.z, (Vfloat)k.collision_count, current_time,
+        k.recent_angle, k.target_closeness, k.num_close_pairs, (int)ctx.voxels.size());
     return total_force;
 }
 
@@ -309,7 +288,8 @@ __device__ Vec3f VX3_Voxel::strain(const VX3_Context &ctx, Vindex voxel,
 }
 
 __device__ Vec3f VX3_Voxel::velocity(const VX3_Context &ctx, Vindex voxel) {
-    return V_G(linear_momentum) * VM_G(V_G(voxel_material), mass_inverse);
+    return V_G(linear_momentum) * VM_G(V_G(voxel_material), mass_inverse) /
+           LINEAR_MOMENTUM_SCALE;
 }
 
 __device__ Vec3f VX3_Voxel::angularVelocity(const VX3_Context &ctx, Vindex voxel) {
@@ -352,9 +332,9 @@ __device__ void VX3_Voxel::floorForce(VX3_Context &ctx, Vindex voxel, float dt,
             normal_force -
             VX3_VoxelMaterial::collisionDampingTranslateC(ctx, voxel_material) * vel.z;
 
-        if (getBoolState(ctx, voxel, FLOOR_STATIC_FRICTION)) {
+        bool is_static_friction = false;
+        if (horizontal_vel.length2() == 0) {
             // If this voxel is currently in static friction mode (no lateral motion)
-            assert(horizontal_vel.length2() == 0);
 
             // use squares to avoid a square root
             Vfloat surface_force_sq =
@@ -362,20 +342,40 @@ __device__ void VX3_Voxel::floorForce(VX3_Context &ctx, Vindex voxel, float dt,
             Vfloat friction_force_sq = (VM_G(voxel_material, u_static) * normal_force);
             friction_force_sq = friction_force_sq * friction_force_sq;
 
-            // if we're breaking static friction, leave the forces as they
-            // currently have been calculated to initiate motion this time
-            // step
-            if (surface_force_sq > friction_force_sq)
-                setBoolState(ctx, voxel, FLOOR_STATIC_FRICTION, false);
-        } else {
-            // even if we just transitioned don't process here or else with a
-            // complete lack of momentum it'll just go back to static friction
+            is_static_friction = friction_force_sq > surface_force_sq;
+        }
 
-            // add a friction force opposing velocity
-            // according to the normal force and the
-            // kinetic coefficient of friction
-            total_force -= VM_G(voxel_material, u_kinetic) * normal_force *
-                           horizontal_vel.normalized();
+        setBoolState(ctx, voxel, FLOOR_STATIC_FRICTION, is_static_friction);
+
+        if (is_static_friction) {
+            // zero out horizontal forces
+            total_force.x = total_force.y = 0;
+        } else {
+            // add a friction force opposing velocity according to the normal force
+            // and the kinetic coefficient of friction
+            Vfloat friction_force = VM_G(voxel_material, u_kinetic) * normal_force;
+
+            // Check whether a voxel is slowing down and switch from kinetic friction
+            // to static friction
+
+            // kinetic friction work
+            Vfloat work = friction_force * horizontal_vel.length() * dt;
+
+            // horizontal kinetic energy 1/2*mv^2
+            Vec3f linear_momentum = V_G(linear_momentum) / LINEAR_MOMENTUM_SCALE;
+            Vfloat hKe = VF(0.5) *
+                         (linear_momentum.x * linear_momentum.x +
+                          linear_momentum.y * linear_momentum.y) *
+                         VM_G(V_G(voxel_material), mass_inverse);
+
+            if (hKe - work <= 0) {
+                // the voxel becomes static, zero out horizontal forces
+                total_force.x = total_force.y = 0;
+                setBoolState(ctx, voxel, FLOOR_STATIC_FRICTION, true);
+            } else {
+                // the voxel is moving, apply kinetic friction
+                total_force -= friction_force * horizontal_vel.normalized();
+            }
         }
     } else
         setBoolState(ctx, voxel, FLOOR_STATIC_FRICTION, false);

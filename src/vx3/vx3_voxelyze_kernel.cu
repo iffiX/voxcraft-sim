@@ -4,7 +4,7 @@
 #include "vx3_voxelyze_kernel.cuh"
 #include <iostream>
 
-#define ALLOCATE_FRAME_NUM 10000
+#define ALLOCATE_FRAME_NUM 256
 
 /* Tools */
 template <typename T>
@@ -247,27 +247,27 @@ void VX3_VoxelyzeKernel::init(Vfloat dt_, Vfloat rescale_) {
  *****************************************************************************/
 // When the max number of links/voxels is smaller than max allowed block size
 // (i.e. fits into one block), use this function to reduce kernel launch cost
-__global__ void update_combined(VX3_VoxelyzeKernel kernel, bool save_frame) {
+__global__ void update_combined(VX3_VoxelyzeKernel kernel, bool should_save_frame) {
     // FIXME: I changed the order of update and moved voxel temperature
     //  update to the last to avoid confliction with link updates
     kernel.updateLinks();
     __syncthreads();
     kernel.updateVoxels();
     kernel.updateVoxelTemperature();
-    // save_frame is used to override record_step_size in the configuration file
-    if (save_frame and kernel.record_step_size and
-        kernel.step % kernel.real_step_size == 0)
+    if (should_save_frame)
         kernel.saveRecordFrame();
 }
 
 __global__ void update_separate_links(VX3_VoxelyzeKernel kernel) { kernel.updateLinks(); }
 
-__global__ void update_separate_voxels(VX3_VoxelyzeKernel kernel, bool save_frame) {
+__global__ void update_separate_voxels(VX3_VoxelyzeKernel kernel, bool should_save_frame) {
+//    unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
+//    if (tid == 0)
+//        printf("\nUpdate %ld dt=%f\n", kernel.step, kernel.dt);
     kernel.updateVoxels();
     kernel.updateVoxelTemperature();
     // save_frame is used to override record_step_size in the configuration file
-    if (save_frame and kernel.record_step_size and
-        kernel.step % kernel.real_step_size == 0)
+    if (should_save_frame)
         kernel.saveRecordFrame();
 }
 
@@ -292,16 +292,17 @@ bool VX3_VoxelyzeKernel::doTimeStep(int dt_update_interval, int divergence_check
         save_frame and record_step_size and step % real_step_size == 0;
     if (should_save_frame)
         adjustRecordFrameStorage(frame_num + 1);
+
     // See if it fits into one block
     auto size =
         getGridAndBlockSize(update_combined, MAX(ctx.voxels.size(), ctx.links.size()));
     if (size.first == 1) {
-        update_combined<<<size.first, size.second, 0, stream>>>(*this, save_frame);
+        update_combined<<<size.first, size.second, 0, stream>>>(*this, should_save_frame);
     } else {
         size = getGridAndBlockSize(update_separate_links, ctx.links.size());
         update_separate_links<<<size.first, size.second, 0, stream>>>(*this);
         size = getGridAndBlockSize(update_separate_voxels, ctx.voxels.size());
-        update_separate_voxels<<<size.first, size.second, 0, stream>>>(*this, save_frame);
+        update_separate_voxels<<<size.first, size.second, 0, stream>>>(*this, should_save_frame);
     }
     if (should_save_frame)
         frame_num++;

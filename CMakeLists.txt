@@ -2,12 +2,14 @@ cmake_minimum_required(VERSION 3.12.0)
 # if we need -fPIC globally
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # Set build type to Release by default
+# set(CMAKE_BUILD_TYPE DEBUG)
 set(CMAKE_BUILD_TYPE RELEASE)
 if (NOT DEFINED CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE RELEASE)
 endif()
 
 set(CMAKE_CUDA_COMPILER /usr/local/cuda-11.8/bin/nvcc)
+#set(CMAKE_CUDA_COMPILER /home/mlw0504/miniconda3/envs/cuda/bin/nvcc)
 #set(CMAKE_CUDA_COMPILER /hpc/software/spack/opt/spack/linux-rhel7-x86_64/intel-19.0.5.281/cuda-11.2.1-5z4nepga7cson2vi56m4x7ocghdigzp4/bin/nvcc)
 
 project(voxcraft-sim LANGUAGES CXX CUDA)
@@ -15,7 +17,7 @@ set(CMAKE_CXX_STANDARD 17)
 ################################################################
 # Configuration for depended libraries
 ################################################################
-set(Boost_USE_STATIC_LIBS   ON)
+# set(Boost_USE_STATIC_LIBS   ON)
 find_package(Boost REQUIRED COMPONENTS filesystem program_options)
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 add_subdirectory(lib/pybind11)

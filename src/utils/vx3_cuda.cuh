@@ -1,5 +1,5 @@
-#ifndef VX3_H
-#define VX3_H
+#ifndef VX3_CUDA_H
+#define VX3_CUDA_H
 
 #include <assert.h>
 #include <chrono>
@@ -11,6 +11,8 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <stdexcept>
+
 #define COLORCODE_RED "\033[0;31m"
 #define COLORCODE_BOLD_RED "\033[1;31m\n"
 #define COLORCODE_GREEN "\033[0;32m"
@@ -24,14 +26,24 @@
 #define DEBUG_LINE_
 
 #ifndef CUDA_ERROR_CHECK
-__device__ __host__ inline void CUDA_ERROR_CHECK_OUTPUT(cudaError_t code,
-                                                        const char *file, int line,
-                                                        bool abort = false) {
+//__device__ __host__ inline void CUDA_ERROR_CHECK_OUTPUT(cudaError_t code,
+//                                                        const char *file, int line) {
+//    if (code != cudaSuccess) {
+//        printf(COLORCODE_BOLD_RED "%s(%d): CUDA Function Error: %s \n" COLORCODE_RESET,
+//               file, line, cudaGetErrorString(code));
+//        // Equivalent to throw an exception
+//        // Make sure that it works for host and device
+//        assert(0);
+//    }
+//}
+
+__host__ inline void CUDA_ERROR_CHECK_OUTPUT(cudaError_t code,
+                                                        const char *file, int line) {
     if (code != cudaSuccess) {
-        printf(COLORCODE_BOLD_RED "%s(%d): CUDA Function Error: %s \n" COLORCODE_RESET,
+        char error[200];
+        sprintf(error, "%s(%d): CUDA Function Error: %s",
                file, line, cudaGetErrorString(code));
-        if (abort)
-            assert(0);
+        throw std::runtime_error(error);
     }
 }
 #define CUDA_ERROR_CHECK(ans)                                                            \
@@ -68,4 +80,4 @@ __device__ __host__ inline void CUDA_ERROR_CHECK_OUTPUT(cudaError_t code,
 #define CUDA_CHECK_AFTER_CALL()                                                          \
     { CUDA_ERROR_CHECK(cudaGetLastError()); }
 
-#endif // VX3_H
+#endif // VX3_CUDA_H

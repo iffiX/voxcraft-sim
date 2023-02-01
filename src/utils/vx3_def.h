@@ -165,8 +165,11 @@ enum LinkAxis : int {
 constexpr float HYSTERESIS_FACTOR = 1.2f; // Amount for small angle bond calculations
 constexpr const float SA_BOND_BEND_RAD = 0.05f; // Amount for small angle bond
                                                 // calculations
-constexpr const float SA_BOND_EXT_PERC = 0.50f; // Amount for small angle bond
-                                                // calculations
+//constexpr const float SA_BOND_EXT_PERC = 0.50f; // Amount for small angle bond
+//                                                // calculations
+
+constexpr const float SA_BOND_EXT_PERC = 0.05f; // Amount for small angle bond
+// calculations
 
 //!< Returns the link axis of the specified link direction.
 __host__ __device__ LinkAxis linkDirectionToAxis(LinkDirection direction);

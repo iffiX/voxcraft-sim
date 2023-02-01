@@ -145,13 +145,15 @@ int main(int argc, char **argv) {
         if (boost::algorithm::to_lower_copy(file.path().extension().string()) == ".vxd") {
             ifstream base_file(base_config_path);
             ifstream robot_file(file.path().string());
+            if (not base_file.is_open() || not robot_file.is_open())
+                throw std::invalid_argument("Invalid files");
             stringstream base_buffer, robot_buffer;
             base_buffer << base_file.rdbuf();
             robot_buffer << robot_file.rdbuf();
             vector<string> bases, robots;
             string base = base_buffer.str();
             string robot = robot_buffer.str();
-            for (size_t i = 0; i < 20; i++) {
+            for (size_t i = 0; i < 1; i++) {
                 bases.push_back(base);
                 robots.push_back(robot);
             }

@@ -160,9 +160,7 @@ private:
      * Device side methods
      *****************************************************************/
     //!< updates pos2, angle1, angle2, and smallAngle.
-    //!< returns the rotation quaternion (after
-    //!< toAxisX) used to get to this orientation
-    __device__ static Quat3f orientLink(VX3_Context &ctx, Vindex link);
+    __device__ static void orientLink(VX3_Context &ctx, Vindex link);
 
     //!< Updates the rest length of this voxel. Call this
     //!< every timestep where the nominal size of either

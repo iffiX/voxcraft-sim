@@ -102,7 +102,7 @@ template __device__ Vfloat VX3_Material::stress<true>(const VX3_Context &, Vinde
                                                       Vfloat, bool);
 
 template <bool isVoxelMaterial>
-__device__ float VX3_Material::strain(const VX3_Context &ctx, Vindex material, Vfloat stress) {
+__device__ Vfloat VX3_Material::strain(const VX3_Context &ctx, Vindex material, Vfloat stress) {
     auto stress_data = MG(stress_data);
     if (stress <= stress_data[1] || MG(linear))
         // for compression/first segment and linear materials (forced or otherwise),
@@ -125,9 +125,9 @@ __device__ float VX3_Material::strain(const VX3_Context &ctx, Vindex material, V
     return 0.0f;
 }
 
-template __device__ float VX3_Material::strain<false>(const VX3_Context &, Vindex,
+template __device__ Vfloat VX3_Material::strain<false>(const VX3_Context &, Vindex,
                                                       Vfloat);
-template __device__ float VX3_Material::strain<true>(const VX3_Context &, Vindex, Vfloat);
+template __device__ Vfloat VX3_Material::strain<true>(const VX3_Context &, Vindex, Vfloat);
 
 template <bool isVoxelMaterial>
 __device__ Vfloat VX3_Material::modulus(const VX3_Context &ctx, Vindex material,
