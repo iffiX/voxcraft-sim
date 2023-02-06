@@ -4,7 +4,7 @@
 #include "vx3_voxelyze_kernel.cuh"
 #include <iostream>
 
-#define ALLOCATE_FRAME_NUM 10000
+#define ALLOCATE_FRAME_NUM 500
 
 /* Tools */
 template <typename T>

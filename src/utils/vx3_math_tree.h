@@ -34,7 +34,8 @@ enum VX3_MathTreeOperator : unsigned int {
 };
 struct VX3_MathTreeToken {
     VX3_MathTreeOperator op = mtEND;
-    Vfloat value = 0.0;
+    // For in values, using float is sufficient
+    float value = 0.0;
 
 #ifndef __CUDACC__
     void set(VX3_MathTreeOperator inOp, Vfloat inValue = 0.0) {
@@ -44,7 +45,7 @@ struct VX3_MathTreeToken {
 #else
     __host__ __device__ void set(VX3_MathTreeOperator inOp, Vfloat inValue = 0.0) {
         op = inOp;
-        value = inValue;
+        value = (float)inValue;
     }
 #endif
 };

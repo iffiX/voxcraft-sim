@@ -74,20 +74,20 @@ __device__ Vfloat VX3_Material::stress(const VX3_Context &ctx, Vindex material, 
         if (strain <= strain_data[i] || i == data_num - 1) {
             // if in the segment ending with this point (or if this is the last point
             // extrapolate out)
-            float perc =
+            Vfloat perc =
                 (strain - strain_data[i - 1]) / (strain_data[i] - strain_data[i - 1]);
-            float basic_stress =
+            Vfloat basic_stress =
                 stress_data[i - 1] + perc * (stress_data[i] - stress_data[i - 1]);
             if (nu == 0.0f)
                 return basic_stress;
             else { // accounting for volumetric effects
-                float modulus = (stress_data[i] - stress_data[i - 1]) /
+                Vfloat modulus = (stress_data[i] - stress_data[i - 1]) /
                                 (strain_data[i] - strain_data[i - 1]);
-                float modulus_hat = modulus / ((1 - 2 * nu) * (1 + nu));
+                Vfloat modulus_hat = modulus / ((1 - 2 * nu) * (1 + nu));
                 // this is the strain at which a simple linear stress strain line
                 // would hit this point at the definied modulus
-                float effective_strain = basic_stress / modulus;
-                float effective_transverse_strain_sum =
+                Vfloat effective_strain = basic_stress / modulus;
+                Vfloat effective_transverse_strain_sum =
                     transverse_strain_sum * (effective_strain / strain);
                 return modulus_hat * ((1 - nu) * effective_strain +
                                       nu * effective_transverse_strain_sum);
@@ -102,7 +102,7 @@ template __device__ Vfloat VX3_Material::stress<true>(const VX3_Context &, Vinde
                                                       Vfloat, bool);
 
 template <bool isVoxelMaterial>
-__device__ float VX3_Material::strain(const VX3_Context &ctx, Vindex material, Vfloat stress) {
+__device__ Vfloat VX3_Material::strain(const VX3_Context &ctx, Vindex material, Vfloat stress) {
     auto stress_data = MG(stress_data);
     if (stress <= stress_data[1] || MG(linear))
         // for compression/first segment and linear materials (forced or otherwise),
@@ -117,7 +117,7 @@ __device__ float VX3_Material::strain(const VX3_Context &ctx, Vindex material, V
         if (stress <= stress_data[i] || i == data_num - 1) {
             // if in the segment ending with this point
             // (or if this is the last point extrapolate out)
-            float perc =
+            Vfloat perc =
                 (stress - stress_data[i - 1]) / (stress_data[i] - stress_data[i - 1]);
             return strain_data[i - 1] + perc * (strain_data[i] - strain_data[i - 1]);
         }
@@ -125,9 +125,9 @@ __device__ float VX3_Material::strain(const VX3_Context &ctx, Vindex material, V
     return 0.0f;
 }
 
-template __device__ float VX3_Material::strain<false>(const VX3_Context &, Vindex,
+template __device__ Vfloat VX3_Material::strain<false>(const VX3_Context &, Vindex,
                                                       Vfloat);
-template __device__ float VX3_Material::strain<true>(const VX3_Context &, Vindex, Vfloat);
+template __device__ Vfloat VX3_Material::strain<true>(const VX3_Context &, Vindex, Vfloat);
 
 template <bool isVoxelMaterial>
 __device__ Vfloat VX3_Material::modulus(const VX3_Context &ctx, Vindex material,

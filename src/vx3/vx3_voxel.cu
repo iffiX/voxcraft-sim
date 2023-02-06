@@ -295,11 +295,11 @@ __device__ Vec3f VX3_Voxel::strain(const VX3_Context &ctx, Vindex voxel,
     if (poissons_strain) {
         if (!(tension[0] && tension[1] && tension[2])) {
             // if at least one isn't in tension
-            float add = 0;
+            Vfloat add = 0;
             for (int i = 0; i < 3; i++)
                 if (tension[i])
                     add += axis_strain_sum[i];
-            float value = pow(VF(1.0) + add, -VM_G(V_G(voxel_material), nu)) - VF(1.0);
+            Vfloat value = pow(VF(1.0) + add, -VM_G(V_G(voxel_material), nu)) - VF(1.0);
             for (int i = 0; i < 3; i++)
                 if (!tension[i])
                     axis_strain_sum[i] = value;
@@ -335,7 +335,7 @@ __device__ bool VX3_Voxel::getBoolState(const VX3_Context &ctx, Vindex voxel,
     return V_G(bool_states) & flag ? true : false;
 }
 
-__device__ void VX3_Voxel::floorForce(VX3_Context &ctx, Vindex voxel, float dt,
+__device__ void VX3_Voxel::floorForce(VX3_Context &ctx, Vindex voxel, Vfloat dt,
                                       Vec3f &total_force) {
     // for now use the average.
     Vfloat current_pen = floorPenetration(ctx, voxel);

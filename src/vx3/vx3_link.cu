@@ -334,8 +334,8 @@ __device__ void VX3_Link::updateTransverseInfo(VX3_Context &ctx, Vindex link) {
                    VX3_Voxel::transverseStrainSum(ctx, voxel_pos, L_G(axis))));
 }
 
-__device__ float VX3_Link::updateStrain(VX3_Context &ctx, Vindex link,
-                                        float axial_strain) {
+__device__ Vfloat VX3_Link::updateStrain(VX3_Context &ctx, Vindex link,
+                                         Vfloat axial_strain) {
     L_S(strain, axial_strain);
 
     Vindex link_material = L_G(link_material);

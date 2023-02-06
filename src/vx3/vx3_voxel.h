@@ -217,7 +217,7 @@ private:
     //!< object's interaction with a floor. This
     //!< should be calculated as the last step of
     //!< sumForce so that pTotalForce is complete.
-    __device__ static void floorForce(VX3_Context &ctx, Vindex voxel, float dt,
+    __device__ static void floorForce(VX3_Context &ctx, Vindex voxel, Vfloat dt,
                                       Vec3f &total_force);
 
     //!< Set/Clear a bool state flag
