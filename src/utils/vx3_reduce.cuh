@@ -4,6 +4,8 @@
 #define VX3_REDUCE_CUH
 #include "utils/vx3_cuda.cuh"
 #include "utils/vx3_def.h"
+
+// Not a config
 #define MAX_BLOCK_SZ 1024
 
 template <typename T, typename ReduceOp>

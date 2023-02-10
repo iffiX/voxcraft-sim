@@ -1,4 +1,4 @@
-#if !defined(VX3_VEC3D_H)
+#ifndef VX3_VEC3D_H
 #define VX3_VEC3D_H
 
 // Possible Linux portability issues: min, max
@@ -7,11 +7,6 @@
 #include "vx3_def.h"
 #include <cfloat>
 #include <cmath>
-
-// indices for each direction
-#define vec3_X 0
-#define vec3_Y 1
-#define vec3_Z 2
 
 //! A generic 3D vector template
 /*!
@@ -162,20 +157,19 @@ template <typename T = Vfloat> class VX3_Vec3D {
     } //!< overload divide and set
     __host__ __device__ const T &operator[](int index) const {
         switch (index % 3) {
-        case vec3_X:
+        case 0:
             return x;
-        case vec3_Y:
-            return y; /*case vec3_Z:*/
+        case 1:
+            return y;
         default:
             return z;
         }
-    } //!< overload index operator. 0 ("vec3_X") is x, 1 ("vec3_Y") is y and 2 ("vec3_Z")
-      //!< is z.
+    } //!< overload index operator. 0 is x, 1 is y and 2 is z.
     __host__ __device__ T &operator[](int index) {
         switch (index % 3) {
-        case vec3_X:
+        case 0:
             return x;
-        case vec3_Y:
+        case 1:
             return y; /*case vec3_Z:*/
         default:
             return z;

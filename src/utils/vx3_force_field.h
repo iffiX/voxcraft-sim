@@ -3,10 +3,10 @@
 
 #include "vx3_math_tree.h"
 
-template <size_t ExprSize> struct VX3_ForceField {
-    VX3_MathTreeToken x_force_field[ExprSize];
-    VX3_MathTreeToken y_force_field[ExprSize];
-    VX3_MathTreeToken z_force_field[ExprSize];
+struct VX3_ForceField {
+    VX3_MathTreeToken x_force_field[VX3_MATH_TREE_MAX_EXPRESSION_TOKENS];
+    VX3_MathTreeToken y_force_field[VX3_MATH_TREE_MAX_EXPRESSION_TOKENS];
+    VX3_MathTreeToken z_force_field[VX3_MATH_TREE_MAX_EXPRESSION_TOKENS];
     VX3_ForceField() {
         x_force_field[0].op = mtCONST;
         x_force_field[0].value = 0;

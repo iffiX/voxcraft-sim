@@ -2,22 +2,34 @@
 // Created by iffi on 11/23/22.
 //
 
+#include "utils/vx3_barrier.h"
+#include "utils/vx3_conf.h"
 #include "vx3/vx3_simulation_manager.h"
 #include "vxa/vx3_config.h"
 #include <future>
 #include <vector>
 
-#include "utils/vx3_barrier.h"
 using namespace std;
 
 class Voxcraft {
-  public:
+public:
     using Result = tuple<vector<string>, vector<string>>;
+    using SubResult = tuple<vector<string>, vector<string>>;
     vector<int> devices;
-    size_t threads_per_device = 8;
+    size_t threads_per_device = 4;
+    size_t sub_batch_size_per_thread = 4;
 
-    explicit Voxcraft(const vector<int> &devices_ = {}, size_t threads_per_device = 16)
-        : threads_per_device(threads_per_device) {
+    explicit Voxcraft(const vector<int> &devices_ = {}, size_t threads_per_device = 4,
+                      size_t sub_batch_size_per_thread = 4)
+            : threads_per_device(threads_per_device),
+              sub_batch_size_per_thread(sub_batch_size_per_thread) {
+
+        if (sub_batch_size_per_thread > VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE) {
+            cout << "Sub batch size exceed max allowed size "
+                 << VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE << endl;
+            cout << "Adjusting it to max allowed size" << endl;
+            this->sub_batch_size_per_thread = VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE;
+        }
         if (devices_.empty()) {
             int count;
             VcudaGetDeviceCount(&count);
@@ -28,51 +40,78 @@ class Voxcraft {
     }
 
     Result runSims(const vector<string> &base_configs,
-                   const vector<string> &experiment_configs) {
+                   const vector<string> &experiment_configs,
+                   bool barrier_on_init = true) {
         Result results;
         if (base_configs.size() != experiment_configs.size())
             throw invalid_argument(
-                "Base config num is different from experiment config num.");
+                    "Base config num is different from experiment config num.");
         if (base_configs.empty())
             return std::move(results);
-        size_t batch_size = threads_per_device * devices.size();
+        size_t batch_size =
+                devices.size() * threads_per_device * sub_batch_size_per_thread;
         size_t batches = CEIL(base_configs.size(), batch_size);
         size_t offset = 0;
         for (size_t b = 0; b < batches; b++) {
             size_t experiment_num = MIN(batch_size, base_configs.size() - offset);
             size_t experiments_per_device = CEIL(experiment_num, devices.size());
-            vector<future<tuple<string, string>>> async_results;
-            // auto barrier = new VX3_Barrier(experiment_num);
+            size_t experiments_per_thread =
+                    CEIL(experiments_per_device, threads_per_device);
+
+            vector<future<SubResult>> async_results;
+
             VX3_Barrier *barrier = nullptr;
-            for (size_t t = 0; t < experiment_num; t++) {
+            if (barrier_on_init)
+                barrier = new VX3_Barrier(CEIL(experiment_num, experiments_per_thread));
+
+            for (size_t t = 0; t < experiment_num; t += experiments_per_thread) {
                 int device = devices[t / experiments_per_device];
+                size_t experiment_num_in_thread =
+                        MIN(experiments_per_thread, experiment_num - t);
+                size_t start = offset + t;
+                size_t end = start + experiment_num_in_thread;
+                vector<string> sub_batch_base_configs(base_configs.begin() + start,
+                                                      base_configs.begin() + end);
+                vector<string> sub_batch_experiment_configs(
+                        experiment_configs.begin() + start, experiment_configs.begin() + end);
                 async_results.emplace_back(
-                    async(&Voxcraft::runSim, base_configs[offset + t],
-                          experiment_configs[offset + t], barrier, device));
+                        async(&Voxcraft::runBatchedSims, sub_batch_base_configs,
+                              sub_batch_experiment_configs, barrier, device));
             }
             for (auto &result : async_results) {
                 auto experiment_result = result.get();
-                get<0>(results).emplace_back(get<0>(experiment_result));
-                get<1>(results).emplace_back(get<1>(experiment_result));
+                get<0>(results).insert(get<0>(results).end(),
+                                       get<0>(experiment_result).begin(),
+                                       get<0>(experiment_result).end());
+                get<1>(results).insert(get<1>(results).end(),
+                                       get<1>(experiment_result).begin(),
+                                       get<1>(experiment_result).end());
             }
-            // delete barrier;
+            if (barrier_on_init)
+                delete barrier;
             offset += experiment_num;
         }
         return std::move(results);
     }
 
-  private:
-    static tuple<string, string> runSim(const string &base_config,
-                                        const string &experiment_config, VX3_Barrier *b,
-                                        int device) {
-        VX3_SimulationManager sm;
-        auto config = VX3_Config(base_config, experiment_config);
-        sm.initSim(config, device);
+private:
+    static SubResult runBatchedSims(const vector<string> &base_configs,
+                                    const vector<string> &experiment_configs,
+                                    VX3_Barrier *b, int device) {
+        VX3_SimulationManager sm(device);
+        for (size_t i = 0; i < base_configs.size(); i++) {
+            auto config = VX3_Config(base_configs[i], experiment_configs[i]);
+            sm.addSim(config);
+        }
         if (b != nullptr)
             b->wait();
-        sm.runSim();
-        return std::move(make_tuple(saveSimulationResult("", "", "", sm.getResult()),
-                                    saveSimulationRecord(sm.getRecord())));
+        sm.runSims();
+        SubResult result;
+        for (auto &sim : sm.sims) {
+            get<0>(result).emplace_back(saveSimulationResult("", "", "", sim.result));
+            get<1>(result).emplace_back(saveSimulationRecord(sim.record));
+        }
+        return std::move(result);
     }
 };
 
@@ -145,17 +184,23 @@ int main(int argc, char **argv) {
         if (boost::algorithm::to_lower_copy(file.path().extension().string()) == ".vxd") {
             ifstream base_file(base_config_path);
             ifstream robot_file(file.path().string());
-            stringstream base_buffer, robot_buffer;
-            base_buffer << base_file.rdbuf();
-            robot_buffer << robot_file.rdbuf();
+//            stringstream base_buffer, robot_buffer;
+//            base_buffer << base_file.rdbuf();
+//            robot_buffer << robot_file.rdbuf();
+//            auto base = base_buffer.str();
+//            auto robot = robot_buffer.str();
+
+            std::string base( (std::istreambuf_iterator<char>(base_file) ),
+                                 (std::istreambuf_iterator<char>()    ) );
+            std::string robot( (std::istreambuf_iterator<char>(robot_file) ),
+                              (std::istreambuf_iterator<char>()    ) );
+
             vector<string> bases, robots;
-            string base = base_buffer.str();
-            string robot = robot_buffer.str();
-            for (size_t i = 0; i < 20; i++) {
+            for (size_t i = 0; i < 32; i++) {
                 bases.push_back(base);
                 robots.push_back(robot);
             }
-            Voxcraft vx({}, 16);
+            Voxcraft vx({}, 1, 18);
             vx.runSims(bases, robots);
         }
     }

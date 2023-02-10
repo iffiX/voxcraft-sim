@@ -32,7 +32,8 @@ VX3_VoxelyzeKernelManager::createKernelFromConfig(const VX3_Config &config,
         link.init(ictx);
 
     // Copy data to the voxelyze kernel
-    VX3_VoxelyzeKernel kernel(stream);
+    VX3_VoxelyzeKernel kernel;
+    kernel.stream = stream;
     kernel.ctx.link_materials.fill(ictx.link_materials, stream);
     kernel.ctx.voxel_materials.fill(ictx.voxel_materials, stream);
     kernel.ctx.links.fill(ictx.links, stream);
@@ -262,7 +263,7 @@ void VX3_VoxelyzeKernelManager::addLink(int x, int y, int z, LinkDirection direc
 
 void VX3_VoxelyzeKernelManager::setMathExpression(
     VX3_MathTreeToken *tokens, const VX3_Config::VX3_MathTreeExpression &expr) {
-    if (expr.size() > MAX_EXPRESSION_TOKENS)
+    if (expr.size() > VX3_MATH_TREE_MAX_EXPRESSION_TOKENS)
         throw std::invalid_argument("Math expression size too large");
     for (size_t i = 0; i < expr.size(); i++)
         tokens[i] = expr[i];

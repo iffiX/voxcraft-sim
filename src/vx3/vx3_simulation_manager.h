@@ -12,21 +12,26 @@
 #include "vxa/vx3_config.h"
 
 class VX3_SimulationManager {
+public:
+    struct Simulation {
+        cudaStream_t stream;
+        bool is_finished = false;
+        VX3_VoxelyzeKernelManager kernel_manager;
+        VX3_VoxelyzeKernel kernel;
+        VX3_SimulationRecord record;
+        VX3_SimulationResult result;
+    };
   public:
-    VX3_SimulationManager() = default;
-    void initSim(const VX3_Config &config, int device_index);
-    bool runSim(int max_steps = 1000000);
-    VX3_SimulationRecord getRecord();
-    VX3_SimulationResult getResult();
+    int device_index;
+    std::vector<Simulation> sims;
+
+    VX3_SimulationManager(int device_index = 0) : device_index(device_index) {};
+    void addSim(const VX3_Config &config);
+    std::vector<bool> runSims(int max_steps = 1000000);
 
   private:
-    cudaStream_t stream;
-    VX3_VoxelyzeKernelManager kernel_manager;
-    VX3_VoxelyzeKernel kernel;
-    VX3_SimulationRecord record;
-    VX3_SimulationResult result;
-    void saveResult();
-    void saveRecord();
+    void saveResult(int sim_index);
+    void saveRecord(int sim_index);
 };
 
 #endif // VX3_SIMULATION_MANAGER

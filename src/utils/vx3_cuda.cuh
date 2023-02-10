@@ -1,5 +1,5 @@
-#ifndef VX3_H
-#define VX3_H
+#ifndef VX3_CUDA_H
+#define VX3_CUDA_H
 
 #include <chrono>
 #include <ctime>
@@ -18,12 +18,12 @@
 #define COLORCODE_RESET "\033[0m"
 
 #ifndef CUDA_ERROR_CHECK
-__host__ inline void CUDA_ERROR_CHECK_OUTPUT(cudaError_t code,
-                                             const char *file, int line) {
+__host__ inline void CUDA_ERROR_CHECK_OUTPUT(cudaError_t code, const char *file,
+                                             int line) {
     if (code != cudaSuccess) {
         char error[200];
-        sprintf(error, "%s(%d): CUDA Function Error: %s",
-                file, line, cudaGetErrorString(code));
+        sprintf(error, "%s(%d): CUDA Function Error: %s", file, line,
+                cudaGetErrorString(code));
         throw std::runtime_error(error);
     }
 }
@@ -47,6 +47,11 @@ __host__ inline void CUDA_ERROR_CHECK_OUTPUT(cudaError_t code,
     { CUDA_ERROR_CHECK(cudaStreamDestroy(stream)) }
 #define VcudaMemcpyAsync(dst, src, count, kind, stream)                                  \
     { CUDA_ERROR_CHECK(cudaMemcpyAsync(dst, src, count, kind, stream)) }
+#define VcudaMemcpyToSymbolAsync(dst, src, count, offset, stream)                        \
+    {                                                                                    \
+        CUDA_ERROR_CHECK(cudaMemcpyToSymbolAsync(dst, src, count, offset,                \
+                                                 cudaMemcpyHostToDevice, stream))        \
+    }
 #define VcudaMallocAsync(dst, size, stream)                                              \
     { CUDA_ERROR_CHECK(cudaMallocAsync(dst, size, stream)) }
 #define VcudaFreeAsync(mem, stream)                                                      \
@@ -62,4 +67,4 @@ __host__ inline void CUDA_ERROR_CHECK_OUTPUT(cudaError_t code,
 #define CUDA_CHECK_AFTER_CALL()                                                          \
     { CUDA_ERROR_CHECK(cudaGetLastError()); }
 
-#endif // VX3_H
+#endif // VX3_CUDA_H

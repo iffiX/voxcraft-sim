@@ -4,11 +4,15 @@
 #include "vx3_voxelyze_kernel.cuh"
 #include <iostream>
 
-#define ALLOCATE_FRAME_NUM 500
+using namespace std;
+
+// Use uint64_t instead of char to make sure that the start of the constant memory
+// is aligned to 8 bytes since the kernel is aligned to 8 bytes
+__constant__ uint64_t cst_kernels[sizeof(VX3_VoxelyzeKernel) / sizeof(uint64_t) *
+                                  VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE];
 
 /* Tools */
-template <typename T>
-inline std::pair<int, int> getGridAndBlockSize(T func, size_t item_num) {
+template <typename T> inline pair<int, int> getGridAndBlockSize(T func, size_t item_num) {
     int min_grid_size, grid_size, block_size;
 
     if (item_num < 256) {
@@ -22,7 +26,7 @@ inline std::pair<int, int> getGridAndBlockSize(T func, size_t item_num) {
     }
     grid_size = CEIL(item_num, block_size);
     block_size = MIN(item_num, block_size);
-    return std::make_pair(grid_size, block_size);
+    return make_pair(grid_size, block_size);
 }
 
 /*****************************************************************************
@@ -201,11 +205,11 @@ __global__ void computeTargetDistances(VX3_VoxelyzeKernel kernel, Vfloat radius,
     closeness[tid] = local_closeness;
 }
 
-std::pair<int, Vfloat> VX3_VoxelyzeKernel::computeTargetCloseness() const {
+pair<int, Vfloat> VX3_VoxelyzeKernel::computeTargetCloseness() const {
     // this function is called periodically. not very often. once every thousand of
     // steps.
     if (max_dist_in_voxel_lengths_to_count_as_pair == 0)
-        return std::make_pair(0, 0);
+        return make_pair(0, 0);
     Vfloat radius = max_dist_in_voxel_lengths_to_count_as_pair * vox_size;
 
     auto voxel_num_close_pairs = (int *)d_reduce1;
@@ -218,7 +222,7 @@ std::pair<int, Vfloat> VX3_VoxelyzeKernel::computeTargetCloseness() const {
                                     voxel_num_close_pairs, target_num, stream);
     Vfloat total_closeness = reduce<Vfloat, sumReduce<Vfloat>>(
         h_reduce_output, closeness, d_reduce2, closeness, target_num, stream);
-    return std::make_pair(total_close_pairs, total_closeness);
+    return make_pair(total_close_pairs, total_closeness);
 }
 
 /*****************************************************************************
@@ -247,28 +251,30 @@ void VX3_VoxelyzeKernel::init(Vfloat dt_, Vfloat rescale_) {
  *****************************************************************************/
 // When the max number of links/voxels is smaller than max allowed block size
 // (i.e. fits into one block), use this function to reduce kernel launch cost
-__global__ void update_combined(VX3_VoxelyzeKernel kernel, bool save_frame) {
+__global__ void update_combined(VX3_VoxelyzeKernel kernel, bool should_save_frame) {
     // FIXME: I changed the order of update and moved voxel temperature
     //  update to the last to avoid confliction with link updates
-    kernel.updateLinks();
+    Vindex tid = threadIdx.x + blockIdx.x * blockDim.x;
+    kernel.updateLinks(tid);
     __syncthreads();
-    kernel.updateVoxels();
-    kernel.updateVoxelTemperature();
-    // save_frame is used to override record_step_size in the configuration file
-    if (save_frame and kernel.record_step_size and
-        kernel.step % kernel.real_step_size == 0)
-        kernel.saveRecordFrame();
+    kernel.updateVoxels(tid);
+    kernel.updateVoxelTemperature(tid);
+    if (should_save_frame)
+        kernel.saveRecordFrame(tid);
 }
 
-__global__ void update_separate_links(VX3_VoxelyzeKernel kernel) { kernel.updateLinks(); }
+__global__ void update_separate_links(VX3_VoxelyzeKernel kernel) {
+    Vindex tid = threadIdx.x + blockIdx.x * blockDim.x;
+    kernel.updateLinks(tid);
+}
 
-__global__ void update_separate_voxels(VX3_VoxelyzeKernel kernel, bool save_frame) {
-    kernel.updateVoxels();
-    kernel.updateVoxelTemperature();
-    // save_frame is used to override record_step_size in the configuration file
-    if (save_frame and kernel.record_step_size and
-        kernel.step % kernel.real_step_size == 0)
-        kernel.saveRecordFrame();
+__global__ void update_separate_voxels(VX3_VoxelyzeKernel kernel,
+                                       bool should_save_frame) {
+    Vindex tid = threadIdx.x + blockIdx.x * blockDim.x;
+    kernel.updateVoxels(tid);
+    kernel.updateVoxelTemperature(tid);
+    if (should_save_frame)
+        kernel.saveRecordFrame(tid);
 }
 
 bool VX3_VoxelyzeKernel::doTimeStep(int dt_update_interval, int divergence_check_interval,
@@ -277,7 +283,7 @@ bool VX3_VoxelyzeKernel::doTimeStep(int dt_update_interval, int divergence_check
         if (step % dt_update_interval == 0) {
             recommended_time_step = recommendedTimeStep();
             if (recommended_time_step < 1e-10) {
-                std::cout << "Warning: recommended_time_step is zero." << std::endl;
+                cout << "Warning: recommended_time_step is zero." << endl;
                 recommended_time_step = 1e-10;
             }
             dt = dt_frac * recommended_time_step;
@@ -296,12 +302,13 @@ bool VX3_VoxelyzeKernel::doTimeStep(int dt_update_interval, int divergence_check
     auto size =
         getGridAndBlockSize(update_combined, MAX(ctx.voxels.size(), ctx.links.size()));
     if (size.first == 1) {
-        update_combined<<<size.first, size.second, 0, stream>>>(*this, save_frame);
+        update_combined<<<size.first, size.second, 0, stream>>>(*this, should_save_frame);
     } else {
         size = getGridAndBlockSize(update_separate_links, ctx.links.size());
         update_separate_links<<<size.first, size.second, 0, stream>>>(*this);
         size = getGridAndBlockSize(update_separate_voxels, ctx.voxels.size());
-        update_separate_voxels<<<size.first, size.second, 0, stream>>>(*this, save_frame);
+        update_separate_voxels<<<size.first, size.second, 0, stream>>>(*this,
+                                                                       should_save_frame);
     }
     if (should_save_frame)
         frame_num++;
@@ -317,13 +324,144 @@ bool VX3_VoxelyzeKernel::doTimeStep(int dt_update_interval, int divergence_check
     return true;
 }
 
+/*****************************************************************************
+ * VX3_VoxelyzeKernel::doTimeStepBatch
+ * Note all function calls such as recommendedTimeStep() in doTimeStepBatch
+ * has implicit synchronization due to the use of reduce()
+ *****************************************************************************/
+struct PrefixSum {
+    unsigned int sums[VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE] = {0};
+};
+
+__global__ void update_separate_links_batch(VX3_VoxelyzeKernel *kernels,
+                                            unsigned int kernel_num,
+                                            PrefixSum thread_num_sums) {
+//    auto *kernels = (VX3_VoxelyzeKernel *)cst_kernels;
+    Vindex kid = 0;
+    Vindex tid = threadIdx.x + blockIdx.x * blockDim.x;
+    for (; kid < kernel_num; kid++) {
+        if (tid < thread_num_sums.sums[kid]) {
+            if (kid > 1)
+                tid = tid - thread_num_sums.sums[kid - 1];
+            break;
+        }
+    }
+    kernels[kid].updateLinks(tid);
+}
+
+__global__ void update_separate_voxels_batch(VX3_VoxelyzeKernel *kernels,
+                                             unsigned int kernel_num,
+                                             PrefixSum thread_num_sums, bool save_frame) {
+//    auto *kernels = (VX3_VoxelyzeKernel *)cst_kernels;
+    Vindex kid = 0;
+    Vindex tid = threadIdx.x + blockIdx.x * blockDim.x;
+    for (; kid < kernel_num; kid++) {
+        if (tid < thread_num_sums.sums[kid]) {
+            if (kid > 1)
+                tid = tid - thread_num_sums.sums[kid - 1];
+            break;
+        }
+    }
+    kernels[kid].updateVoxels(tid);
+    kernels[kid].updateVoxelTemperature(tid);
+    if (save_frame and kernels[kid].record_step_size and
+        kernels[kid].step % kernels[kid].real_step_size == 0)
+        kernels[kid].saveRecordFrame(tid);
+}
+
+vector<bool> VX3_VoxelyzeKernel::doTimeStepBatch(vector<VX3_VoxelyzeKernel *> &kernels,
+                                                 cudaStream_t stream,
+                                                 int dt_update_interval,
+                                                 int divergence_check_interval,
+                                                 bool save_frame) {
+    if (kernels.size() > VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE)
+        throw std::invalid_argument("Kernel batch size exceeds allowed size");
+
+    vector<bool> result(kernels.size(), true);
+
+    size_t k_index = 0;
+    for (auto &k : kernels) {
+        if (k->is_dt_dynamic) {
+            if (k->step % dt_update_interval == 0) {
+                k->recommended_time_step = k->recommendedTimeStep();
+                if (k->recommended_time_step < 1e-10) {
+                    cout << "Warning: recommended_time_step of kernel " << k_index
+                         << " is zero." << endl;
+                    k->recommended_time_step = 1e-10;
+                }
+                k->dt = k->dt_frac * k->recommended_time_step;
+            }
+        }
+        if (k->step % divergence_check_interval == 0 and k->isAnyLinkDiverged())
+            result[k_index] = false;
+
+        bool should_save_frame =
+            save_frame and k->record_step_size and k->step % k->real_step_size == 0;
+        if (should_save_frame)
+            k->adjustRecordFrameStorage(k->frame_num + 1);
+
+        k_index++;
+    }
+
+    // batch update for all kernels
+    unsigned int thread_num = 0;
+    PrefixSum thread_size_sums;
+    VX3_VoxelyzeKernel *h_kernels, *d_kernels;
+    VcudaMallocHost(&h_kernels, sizeof(VX3_VoxelyzeKernel) * kernels.size());
+    VcudaMallocAsync(&d_kernels, sizeof(VX3_VoxelyzeKernel) * kernels.size(), stream);
+    for (size_t i = 0; i < kernels.size(); i++) {
+        memcpy(h_kernels + i, kernels[i], sizeof(VX3_VoxelyzeKernel));
+        size_t thread_num_in_kernel =
+            ALIGN(MAX(kernels[i]->ctx.links.size(), kernels[i]->ctx.voxels.size()), 32);
+        thread_num += thread_num_in_kernel;
+        thread_size_sums.sums[i] = thread_num;
+    }
+    VcudaMemcpyAsync(d_kernels, h_kernels, sizeof(VX3_VoxelyzeKernel) * kernels.size(), cudaMemcpyHostToDevice, stream);
+    VcudaStreamSynchronize(stream);
+//    VcudaMemcpyToSymbolAsync(cst_kernels, h_kernels,
+//                             sizeof(VX3_VoxelyzeKernel) * kernels.size(), 0, stream);
+    auto size = getGridAndBlockSize(update_separate_links_batch, thread_num);
+    update_separate_links_batch<<<size.first, size.second, 0, stream>>>(d_kernels,
+                                                                        kernels.size(),
+                                                                        thread_size_sums);
+    size = getGridAndBlockSize(update_separate_voxels_batch, thread_num);
+    update_separate_voxels_batch<<<size.first, size.second, 0, stream>>>(
+        d_kernels, kernels.size(), thread_size_sums, save_frame);
+    VcudaFreeAsync(d_kernels, stream);
+    VcudaStreamSynchronize(stream);
+
+    k_index = 0;
+    for (auto &k : kernels) {
+        if (result[k_index]) {
+            bool should_save_frame =
+                save_frame and k->record_step_size and k->step % k->real_step_size == 0;
+            if (should_save_frame)
+                k->frame_num++;
+
+            int cycle_step = FLOOR(k->temp_period, k->dt);
+            if (k->step % cycle_step == 0) {
+                // Sample at the same time point in the cycle, to avoid the
+                // impact of actuation as much as possible.
+                k->updateMetrics();
+            }
+            k->step++;
+            k->time += k->dt;
+        }
+    }
+    return std::move(result);
+}
+
+/*****************************************************************************
+ * VX3_VoxelyzeKernel::adjustRecordFrameStorage
+ *****************************************************************************/
 void VX3_VoxelyzeKernel::adjustRecordFrameStorage(size_t required_size) {
     if (frame_storage_size < required_size) {
         unsigned long *new_d_steps;
         Vfloat *new_d_time_points;
         VX3_SimulationLinkRecord *new_d_link_record;
         VX3_SimulationVoxelRecord *new_d_voxel_record;
-        size_t new_frame_capacity = frame_storage_size + ALLOCATE_FRAME_NUM;
+        size_t new_frame_capacity =
+            frame_storage_size + VX3_VOXELYZE_KERNEL_ALLOCATE_FRAME_NUM;
         VcudaStreamSynchronize(stream);
         VcudaMallocAsync(&new_d_steps, sizeof(unsigned long) * new_frame_capacity,
                          stream);
@@ -366,6 +504,9 @@ void VX3_VoxelyzeKernel::adjustRecordFrameStorage(size_t required_size) {
     }
 }
 
+/*****************************************************************************
+ * VX3_VoxelyzeKernel::updateMetrics
+ *****************************************************************************/
 void VX3_VoxelyzeKernel::updateMetrics() {
     angle_sample_times++;
 
@@ -388,8 +529,10 @@ void VX3_VoxelyzeKernel::updateMetrics() {
     target_closeness = closeness.second;
 }
 
-__device__ void VX3_VoxelyzeKernel::updateLinks() {
-    unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
+/*****************************************************************************
+ * VX3_VoxelyzeKernel device sub-routines
+ *****************************************************************************/
+__device__ void VX3_VoxelyzeKernel::updateLinks(Vindex tid) {
     if (tid < ctx.links.size()) {
         Vindex voxel_neg = L_G(tid, voxel_neg);
         Vindex voxel_pos = L_G(tid, voxel_pos);
@@ -406,8 +549,7 @@ __device__ void VX3_VoxelyzeKernel::updateLinks() {
     }
 }
 
-__device__ void VX3_VoxelyzeKernel::updateVoxels() {
-    unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
+__device__ void VX3_VoxelyzeKernel::updateVoxels(Vindex tid) {
     if (tid < ctx.voxels.size()) {
         Vindex material = V_G(tid, voxel_material);
         if (VM_G(material, fixed))
@@ -416,9 +558,8 @@ __device__ void VX3_VoxelyzeKernel::updateVoxels() {
     }
 }
 
-__device__ void VX3_VoxelyzeKernel::updateVoxelTemperature() {
+__device__ void VX3_VoxelyzeKernel::updateVoxelTemperature(Vindex tid) {
     // updates the temperatures For Actuation!
-    unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
     if (enable_vary_temp and temp_period > 0 and tid < ctx.voxels.size()) {
         Vindex material = V_G(tid, voxel_material);
         if (VM_G(material, fixed))
@@ -436,9 +577,8 @@ __device__ void VX3_VoxelyzeKernel::updateVoxelTemperature() {
     }
 }
 
-__device__ void VX3_VoxelyzeKernel::saveRecordFrame() {
+__device__ void VX3_VoxelyzeKernel::saveRecordFrame(Vindex tid) {
     unsigned int frame = frame_num;
-    unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
     Vfloat scale = 1 / rescale;
 
     if (tid == 0) {

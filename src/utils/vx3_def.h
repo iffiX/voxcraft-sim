@@ -7,6 +7,7 @@
 
 #define CEIL(x, y) ((x) + (y) - 1) / (y)
 #define FLOOR(x, y) ((x) / (y))
+#define ALIGN(x, y) (CEIL(x, y) * y)
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 #define BOUND(x, min, max) (MAX(MIN(x, max), min))

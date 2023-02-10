@@ -72,18 +72,18 @@ int main(int argc, char **argv) {
             auto config = VX3_Config();
             config.open(base_config_path, file.path().string());
             cout << "Running simulation for file: " << file.path().string() << endl;
-            VX3_SimulationManager sm;
-            sm.initSim(config, 0);
-            if (sm.runSim()) {
+            VX3_SimulationManager sm(0);
+            sm.addSim(config);
+            if (sm.runSims()[0]) {
                 // Use the same file name for saving
                 string output_result_path =
                     (output / (file.path().stem().string() + ".result")).string();
                 string output_record_path =
                     (output / (file.path().stem().string() + ".history")).string();
-                saveSimulationRecordToFile(output_record_path, sm.getRecord());
+                saveSimulationRecordToFile(output_record_path, sm.sims[0].record);
                 saveSimulationResultToFile(output_result_path, input.string(), "base.vxa",
                                            file.path().filename().string(),
-                                           sm.getResult());
+                                           sm.sims[0].result);
             }
         }
     }

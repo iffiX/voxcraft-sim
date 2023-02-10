@@ -1,22 +1,21 @@
 #ifndef VX3_VOXELYZE_KERNEL_H
 #define VX3_VOXELYZE_KERNEL_H
-#include <vector>
-#include <thrust/device_vector.h>
 #include "utils/vx3_cuda.cuh"
 #include "utils/vx3_force_field.h"
-#include "vx3/vx3_link.h"
-#include "vx3/vx3_voxel.h"
-#include "vx3/vx3_link_material.h"
-#include "vx3/vx3_voxel_material.h"
 #include "vx3/vx3_context.h"
+#include "vx3/vx3_link.h"
+#include "vx3/vx3_link_material.h"
 #include "vx3/vx3_simulation_record.h"
+#include "vx3/vx3_voxel.h"
+#include "vx3/vx3_voxel_material.h"
+#include <thrust/device_vector.h>
+#include <vector>
 
-struct VX3_VoxelyzeKernel {
+struct __align__(8) VX3_VoxelyzeKernel {
     /**
      * Note: memory management is done by VX3_VoxelyzeKernelManager
      */
     VX3_VoxelyzeKernel() = default;
-    VX3_VoxelyzeKernel(const cudaStream_t &stream) : stream(stream) {};
     Vfloat recommendedTimeStep() const;
     bool isStopConditionMet() const;
     bool isAnyLinkDiverged() const;
@@ -28,14 +27,19 @@ struct VX3_VoxelyzeKernel {
     void init(Vfloat dt = -1.0f, Vfloat rescale = 0.001);
     bool doTimeStep(int dt_update_interval = 10, int divergence_check_interval = 100,
                     bool save_frame = true);
+    static std::vector<bool> doTimeStepBatch(std::vector<VX3_VoxelyzeKernel *> &kernels,
+                                             cudaStream_t stream,
+                                             int dt_update_interval = 10,
+                                             int divergence_check_interval = 100,
+                                             bool save_frame = true);
     void adjustRecordFrameStorage(size_t required_size);
     void updateMetrics();
 
     // update sub-routines used by doTimeStep
-    __device__ void updateLinks();
-    __device__ void updateVoxels();
-    __device__ void updateVoxelTemperature();
-    __device__ void saveRecordFrame();
+    __device__ void updateLinks(Vindex tid);
+    __device__ void updateVoxels(Vindex tid);
+    __device__ void updateVoxelTemperature(Vindex tid);
+    __device__ void saveRecordFrame(Vindex tid);
 
     /* data */
     // Do not access this attribute on the device side!
@@ -47,13 +51,13 @@ struct VX3_VoxelyzeKernel {
      */
     VX3_Context ctx;
 
-    Vfloat vox_size = 0;            // lattice size
+    Vfloat vox_size = 0; // lattice size
 
     // In VXA.Simulator.Integration
     Vfloat dt_frac = 0;
 
     // In VXA.Simulator.StopCondition
-    VX3_MathTreeToken stop_condition_formula[MAX_EXPRESSION_TOKENS];
+    VX3_MathTreeTokens stop_condition_formula;
 
     // In VXA.Simulator.RecordHistory
     int record_step_size = 0;
@@ -67,17 +71,19 @@ struct VX3_VoxelyzeKernel {
 
     //// Collision constants
     Vfloat bounding_radius; //(in voxel units) radius to collide a voxel at
-    Vfloat watch_distance;  //(in voxel units) Distance between voxels (not including 2*boundingRadius for each voxel) to watch for collisions from.
+    Vfloat
+        watch_distance; //(in voxel units) Distance between voxels (not including
+                        //2*boundingRadius for each voxel) to watch for collisions from.
 
     //// Safety guard during the creation of new link
     int safety_guard = 500;
-    VX3_MathTreeToken attach_conditions[5][MAX_EXPRESSION_TOKENS];
+    VX3_MathTreeTokens attach_conditions[5];
 
     // In VXA.Simulator.ForceField
-    VX3_ForceField<MAX_EXPRESSION_TOKENS> force_field;
+    VX3_ForceField force_field;
 
     // In VXA.Simulator
-    VX3_MathTreeToken fitness_function[MAX_EXPRESSION_TOKENS];
+    VX3_MathTreeTokens fitness_function;
     Vfloat max_dist_in_voxel_lengths_to_count_as_pair;
     bool save_position_of_all_voxels = false;
     bool enable_cilia = false;
@@ -94,7 +100,7 @@ struct VX3_VoxelyzeKernel {
     Vfloat temp_period = 0;
 
     // Some other preset attributes
-    Vindex* target_indices = nullptr;
+    Vindex *target_indices = nullptr;
     size_t target_num = 0;
 
     /**
@@ -117,11 +123,11 @@ struct VX3_VoxelyzeKernel {
     int num_close_pairs = 0;
     Vfloat target_closeness = 0;
 
-    //Calculate Angle by
-    //A---B----C
-    //A: current_center_of_mass_history[0]
-    //B: current_center_of_mass_history[1]
-    //C: current_center_of_mass
+    // Calculate Angle by
+    // A---B----C
+    // A: current_center_of_mass_history[0]
+    // B: current_center_of_mass_history[1]
+    // C: current_center_of_mass
     Vec3f current_center_of_mass_history[2];
     int angle_sample_times = 0;
     Vfloat recent_angle = 0;

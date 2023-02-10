@@ -9,7 +9,8 @@ if (NOT DEFINED CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE RELEASE)
 endif()
 
-set(CMAKE_CUDA_COMPILER /usr/local/cuda-11.8/bin/nvcc)
+set(CMAKE_CUDA_COMPILER /home/iffi/miniconda3/envs/cuda-11.7/bin/nvcc)
+#set(CMAKE_CUDA_COMPILER /usr/local/cuda-11.8/bin/nvcc)
 #set(CMAKE_CUDA_COMPILER /home/mlw0504/miniconda3/envs/cuda/bin/nvcc)
 
 project(voxcraft-sim LANGUAGES CXX CUDA)
