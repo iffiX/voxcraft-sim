@@ -172,18 +172,18 @@ Vindex VX3_VoxelyzeKernelManager::addOrGetLinkMaterial(Vindex voxel1_material_in
 
 void VX3_VoxelyzeKernelManager::addVoxels(const VX3_StructureConfig &structure_config,
                                           Vfloat vox_size) {
-    for (int z = 0; z < structure_config.z_voxels; z++) {
-        for (int y = 0; y < structure_config.y_voxels; y++) {
-            for (int x = 0; x < structure_config.x_voxels; x++) {
+    for (short z = 0; z < structure_config.z_voxels; z++) {
+        for (short y = 0; y < structure_config.y_voxels; y++) {
+            for (short x = 0; x < structure_config.x_voxels; x++) {
                 int idx_1d = index3DToIndex1D(x, y, z, structure_config.x_voxels,
                                               structure_config.y_voxels);
                 // Skip empty voxels
                 if (structure_config.data[idx_1d] == 0)
                     continue;
                 auto voxel = VX3_Voxel();
-                voxel.index_x = (short)x;
-                voxel.index_y = (short)y;
-                voxel.index_z = (short)z;
+                voxel.index_x = x;
+                voxel.index_y = y;
+                voxel.index_z = z;
                 voxel.position.x = (Vfloat)x * vox_size;
                 voxel.position.y = (Vfloat)y * vox_size;
                 voxel.position.z = (Vfloat)z * vox_size;
@@ -209,11 +209,11 @@ void VX3_VoxelyzeKernelManager::addVoxels(const VX3_StructureConfig &structure_c
     }
 }
 
-void VX3_VoxelyzeKernelManager::addLink(int x, int y, int z, LinkDirection direction) {
+void VX3_VoxelyzeKernelManager::addLink(short x, short y, short z, LinkDirection direction) {
     auto voxel1_coords = index3DToCoordinate(x, y, z);
-    auto voxel2_coords = index3DToCoordinate(x + xIndexVoxelOffset(direction),
-                                             y + yIndexVoxelOffset(direction),
-                                             z + zIndexVoxelOffset(direction));
+    auto voxel2_coords = index3DToCoordinate(x + (short)xIndexVoxelOffset(direction),
+                                             y + (short)yIndexVoxelOffset(direction),
+                                             z + (short)zIndexVoxelOffset(direction));
     if (coordinate_to_voxel_index.find(voxel1_coords) ==
             coordinate_to_voxel_index.end() ||
         coordinate_to_voxel_index.find(voxel2_coords) == coordinate_to_voxel_index.end())
@@ -260,8 +260,8 @@ void VX3_VoxelyzeKernelManager::setMathExpression(
         tokens[i] = expr[i];
 }
 
-inline string VX3_VoxelyzeKernelManager::index3DToCoordinate(int x, int y, int z) const {
-    return (format{"%d,%d,%d"} % x % y % z).str();
+inline uint64_t VX3_VoxelyzeKernelManager::index3DToCoordinate(short x, short y, short z) const {
+    return uint64_t(x) << 32 | uint64_t(y) << 16 | uint64_t(z);
 }
 
 inline int VX3_VoxelyzeKernelManager::index3DToIndex1D(int x, int y, int z, int x_size,

@@ -22,7 +22,7 @@ class VX3_VoxelyzeKernelManager {
     void freeKernel(VX3_VoxelyzeKernel &kernel, const cudaStream_t &stream);
 
   private:
-    std::unordered_map<std::string, Vindex> coordinate_to_voxel_index;
+    std::unordered_map<uint64_t, Vindex> coordinate_to_voxel_index;
     std::unordered_map<UnorderedPair<Vindex>, Vindex, UnorderedPairHash<Vindex>>
         voxel_materials_to_link_material_index;
 
@@ -32,7 +32,7 @@ class VX3_VoxelyzeKernelManager {
     void addVoxels(const VX3_StructureConfig &structure_config, Vfloat vox_size);
     Vindex addOrGetLinkMaterial(Vindex voxel1_material_index,
                                 Vindex voxel2_material_index);
-    void addLink(int x, int y, int z, LinkDirection direction);
+    void addLink(short x, short y, short z, LinkDirection direction);
     void setMathExpression(VX3_MathTreeToken *tokens,
                            const VX3_Config::VX3_MathTreeExpression &expr);
 
@@ -51,7 +51,7 @@ class VX3_VoxelyzeKernelManager {
         return (direction == Z_NEG) ? -1 : ((direction == Z_POS) ? 1 : 0);
     }
 
-    std::string index3DToCoordinate(int x, int y, int z) const;
+    uint64_t index3DToCoordinate(short x, short y, short z) const;
     int index3DToIndex1D(int x, int y, int z, int x_size, int y_size) const;
 };
 
