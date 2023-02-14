@@ -33,7 +33,6 @@ VX3_VoxelyzeKernelManager::createKernelFromConfig(const VX3_Config &config,
 
     // Copy data to the voxelyze kernel
     VX3_VoxelyzeKernel kernel;
-    kernel.stream = stream;
     kernel.ctx.link_materials.fill(ictx.link_materials, stream);
     kernel.ctx.voxel_materials.fill(ictx.voxel_materials, stream);
     kernel.ctx.links.fill(ictx.links, stream);
@@ -98,26 +97,18 @@ VX3_VoxelyzeKernelManager::createKernelFromConfig(const VX3_Config &config,
     VcudaFreeHost(tmp_target_indices);
     kernel.target_num = target_num;
 
-    // Setup reduce memory
-    Vsize max_elem_num = MAX(ictx.voxels.size(), ictx.links.size());
-    VcudaMallocHost(&kernel.h_reduce_output, sizeof(Vfloat) * 4);
-    VcudaMallocAsync(&kernel.d_reduce1, sizeof(Vfloat) * max_elem_num * 4, stream);
-    VcudaMallocAsync(&kernel.d_reduce2, sizeof(Vfloat) * max_elem_num * 4, stream);
     return kernel;
 }
 
-void VX3_VoxelyzeKernelManager::freeKernel(VX3_VoxelyzeKernel &kernel) {
-    kernel.ctx.link_materials.free(kernel.stream);
-    kernel.ctx.voxel_materials.free(kernel.stream);
-    kernel.ctx.links.free(kernel.stream);
-    kernel.ctx.voxels.free(kernel.stream);
-    VcudaFreeHost(kernel.h_reduce_output);
-    VcudaFreeAsync(kernel.d_reduce1, kernel.stream);
-    VcudaFreeAsync(kernel.d_reduce2, kernel.stream);
-    VcudaFreeAsync(kernel.d_steps, kernel.stream);
-    VcudaFreeAsync(kernel.d_time_points, kernel.stream);
-    VcudaFreeAsync(kernel.d_link_record, kernel.stream);
-    VcudaFreeAsync(kernel.d_voxel_record, kernel.stream);
+void VX3_VoxelyzeKernelManager::freeKernel(VX3_VoxelyzeKernel &kernel, const cudaStream_t &stream) {
+    kernel.ctx.link_materials.free(stream);
+    kernel.ctx.voxel_materials.free(stream);
+    kernel.ctx.links.free(stream);
+    kernel.ctx.voxels.free(stream);
+    VcudaFreeAsync(kernel.d_steps, stream);
+    VcudaFreeAsync(kernel.d_time_points, stream);
+    VcudaFreeAsync(kernel.d_link_record, stream);
+    VcudaFreeAsync(kernel.d_voxel_record, stream);
 }
 
 void VX3_VoxelyzeKernelManager::addVoxelMaterial(

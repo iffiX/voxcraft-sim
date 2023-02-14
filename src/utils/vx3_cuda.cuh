@@ -67,4 +67,6 @@ __host__ inline void CUDA_ERROR_CHECK_OUTPUT(cudaError_t code, const char *file,
 #define CUDA_CHECK_AFTER_CALL()                                                          \
     { CUDA_ERROR_CHECK(cudaGetLastError()); }
 
+#define CUDA_MAX_BLOCK_SIZE 1024
+#define CUDA_MAX_WARP_SIZE  32
 #endif // VX3_CUDA_H

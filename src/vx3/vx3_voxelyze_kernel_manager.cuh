@@ -19,7 +19,7 @@ class VX3_VoxelyzeKernelManager {
 
     VX3_VoxelyzeKernel createKernelFromConfig(const VX3_Config &config,
                                               const cudaStream_t &stream);
-    void freeKernel(VX3_VoxelyzeKernel &kernel);
+    void freeKernel(VX3_VoxelyzeKernel &kernel, const cudaStream_t &stream);
 
   private:
     std::unordered_map<std::string, Vindex> coordinate_to_voxel_index;
