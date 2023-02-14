@@ -12,7 +12,7 @@
 using namespace std;
 
 class Voxcraft {
-public:
+  public:
     using Result = tuple<vector<string>, vector<string>>;
     using RawResult = tuple<vector<VX3_SimulationResult>, vector<VX3_SimulationRecord>>;
     using SubResult = tuple<vector<VX3_SimulationResult>, vector<VX3_SimulationRecord>>;
@@ -20,8 +20,15 @@ public:
     vector<int> devices;
     size_t batch_size_per_device;
 
-    explicit Voxcraft(const vector<int> &devices_ = {}, size_t batch_size_per_device = 32)
-            : batch_size_per_device(batch_size_per_device) {
+    explicit Voxcraft(const vector<int> &devices_ = {},
+                      size_t batch_size_per_device = VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE)
+        : batch_size_per_device(batch_size_per_device) {
+        if (batch_size_per_device > VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE) {
+            cout << "Batch size per device exceeds limit "
+                 << VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE << ", scaling down to accommodate"
+                 << endl;
+            batch_size_per_device = VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE;
+        }
         if (devices_.empty()) {
             int count;
             VcudaGetDeviceCount(&count);
@@ -38,7 +45,7 @@ public:
 
         if (base_configs.size() != experiment_configs.size())
             throw invalid_argument(
-                    "Base config num is different from experiment config num.");
+                "Base config num is different from experiment config num.");
         if (base_configs.empty())
             return std::move(results);
         size_t batch_size = devices.size() * batch_size_per_device;
@@ -57,19 +64,19 @@ public:
                 vector<string> sub_batch_base_configs(base_configs.begin() + start,
                                                       base_configs.begin() + end);
                 vector<string> sub_batch_experiment_configs(
-                        experiment_configs.begin() + start, experiment_configs.begin() + end);
+                    experiment_configs.begin() + start, experiment_configs.begin() + end);
                 async_raw_results.emplace_back(
-                        async(&Voxcraft::runBatchedSims, sub_batch_base_configs,
-                              sub_batch_experiment_configs, device));
+                    async(&Voxcraft::runBatchedSims, sub_batch_base_configs,
+                          sub_batch_experiment_configs, device));
             }
             for (auto &result : async_raw_results) {
                 auto experiment_result = result.get();
                 get<0>(raw_results)
-                        .insert(get<0>(raw_results).end(), get<0>(experiment_result).begin(),
-                                get<0>(experiment_result).end());
+                    .insert(get<0>(raw_results).end(), get<0>(experiment_result).begin(),
+                            get<0>(experiment_result).end());
                 get<1>(raw_results)
-                        .insert(get<1>(raw_results).end(), get<1>(experiment_result).begin(),
-                                get<1>(experiment_result).end());
+                    .insert(get<1>(raw_results).end(), get<1>(experiment_result).begin(),
+                            get<1>(experiment_result).end());
             }
             offset += experiment_num;
         }
@@ -88,7 +95,7 @@ public:
         return std::move(results);
     }
 
-private:
+  private:
     static SubResult runBatchedSims(const vector<string> &base_configs,
                                     const vector<string> &experiment_configs,
                                     int device) {
@@ -182,16 +189,16 @@ int main(int argc, char **argv) {
         if (boost::algorithm::to_lower_copy(file.path().extension().string()) == ".vxd") {
             ifstream base_file(base_config_path);
             ifstream robot_file(file.path().string());
-//            stringstream base_buffer, robot_buffer;
-//            base_buffer << base_file.rdbuf();
-//            robot_buffer << robot_file.rdbuf();
-//            auto base = base_buffer.str();
-//            auto robot = robot_buffer.str();
+            //            stringstream base_buffer, robot_buffer;
+            //            base_buffer << base_file.rdbuf();
+            //            robot_buffer << robot_file.rdbuf();
+            //            auto base = base_buffer.str();
+            //            auto robot = robot_buffer.str();
 
-            std::string base( (std::istreambuf_iterator<char>(base_file) ),
-                                 (std::istreambuf_iterator<char>()    ) );
-            std::string robot( (std::istreambuf_iterator<char>(robot_file) ),
-                              (std::istreambuf_iterator<char>()    ) );
+            std::string base((std::istreambuf_iterator<char>(base_file)),
+                             (std::istreambuf_iterator<char>()));
+            std::string robot((std::istreambuf_iterator<char>(robot_file)),
+                              (std::istreambuf_iterator<char>()));
 
             vector<string> bases, robots;
             for (size_t i = 0; i < 128; i++) {
