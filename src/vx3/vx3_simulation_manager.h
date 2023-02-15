@@ -22,13 +22,15 @@ class VX3_SimulationManager {
     };
 
   public:
-    int device_index;
+    int device;
+    int batch;
     cudaStream_t stream;
     VX3_VoxelyzeKernelBatchExecutor exec;
     std::vector<Simulation> sims;
 
-    VX3_SimulationManager(int device_index = 0) : device_index(device_index){
-        VcudaSetDevice(device_index);
+    VX3_SimulationManager(int device, int batch)
+        : device(device), batch(batch) {
+        VcudaSetDevice(device);
         VcudaStreamCreate(&stream);
     };
     void addSim(const VX3_Config &config);

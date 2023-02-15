@@ -21,8 +21,8 @@ class Voxcraft {
     size_t batch_size_per_device;
 
     explicit Voxcraft(const vector<int> &devices_ = {},
-                      size_t batch_size_per_device = VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE)
-        : batch_size_per_device(batch_size_per_device) {
+                      size_t _batch_size_per_device = VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE)
+        : batch_size_per_device(_batch_size_per_device) {
         if (batch_size_per_device > VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE) {
             cout << "Batch size per device exceeds limit "
                  << VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE << ", scaling down to accommodate"
@@ -201,7 +201,7 @@ int main(int argc, char **argv) {
                               (std::istreambuf_iterator<char>()));
 
             vector<string> bases, robots;
-            for (size_t i = 0; i < 128; i++) {
+            for (size_t i = 0; i < 256; i++) {
                 bases.push_back(base);
                 robots.push_back(robot);
             }
