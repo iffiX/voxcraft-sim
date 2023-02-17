@@ -3,8 +3,8 @@ cmake_minimum_required(VERSION 3.12.0)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Set build type to Release by default
-# set(CMAKE_BUILD_TYPE DEBUG)
-set(CMAKE_BUILD_TYPE RELEASE)
+set(CMAKE_BUILD_TYPE DEBUG)
+# set(CMAKE_BUILD_TYPE RELEASE)
 if (NOT DEFINED CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE RELEASE)
 endif()
@@ -21,6 +21,7 @@ set(CMAKE_CXX_STANDARD 17)
 find_package(Boost REQUIRED COMPONENTS filesystem program_options)
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 add_subdirectory(lib/pybind11)
+add_subdirectory(lib/backward-cpp)
 
 # CUDA options
 find_package(CUDA) # for CUDA_SELECT_NVCC_ARCH_FLAGS function
@@ -44,12 +45,13 @@ if (NOT DEFINED CUDA_ARCH)
   endif()
 endif()
 
-#string(TOUPPER "${CMAKE_BUILD_TYPE}" uppercase_CMAKE_BUILD_TYPE)
-#if(uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
-#  if (NOT DEFINED CUDA_DEBUG)
-#    set(CUDA_DEBUG "-G or not" ON)
-#  endif()
-#endif(uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
+string(TOUPPER "${CMAKE_BUILD_TYPE}" uppercase_CMAKE_BUILD_TYPE)
+if(uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
+  if (NOT DEFINED CUDA_DEBUG)
+    set(CUDA_DEBUG "-G or not" ON)
+  endif()
+endif(uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
+
 ##-MG means debug info in GPU, so you can step in GPU kernels
 #if (CUDA_DEBUG)
 #  message("Set CUDA_DEBUG to ON.")
@@ -61,7 +63,6 @@ endif()
 
 message("Set CUDA_DEBUG to OFF.")
 set(CUDA_OPTIONS $<$<COMPILE_LANGUAGE:CUDA>: ${ARCH_FLAGS} --expt-relaxed-constexpr>)
-
 ################################################################
 # Main builds
 ################################################################
@@ -86,12 +87,18 @@ target_link_libraries(voxcraft-sim PUBLIC voxelyze3)
 target_link_libraries(voxcraft-sim PUBLIC ${Boost_LIBRARIES})
 set_target_properties(voxcraft-sim PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 target_compile_options(voxcraft-sim PUBLIC ${CUDA_OPTIONS})
+if(uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
+add_backward(voxcraft-sim)
+endif(uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
 
 add_executable(voxcraft-test src/executables/test.cu)
 target_link_libraries(voxcraft-test PUBLIC voxelyze3)
 target_link_libraries(voxcraft-test PUBLIC ${Boost_LIBRARIES})
 set_target_properties(voxcraft-test PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 target_compile_options(voxcraft-test PUBLIC ${CUDA_OPTIONS})
+if(uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
+  add_backward(voxcraft-test)
+endif(uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
 
 pybind11_add_module(voxcraft SHARED ${PYTHON_SRC_cu})
 target_link_libraries(voxcraft PRIVATE

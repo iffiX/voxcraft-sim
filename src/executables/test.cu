@@ -2,12 +2,14 @@
 // Created by iffi on 11/23/22.
 //
 
+#include <future>
+#include <vector>
+#include <backward-cpp/backward.hpp>
+
 #include "utils/vx3_barrier.h"
 #include "utils/vx3_conf.h"
 #include "vx3/vx3_simulation_manager.h"
 #include "vxa/vx3_config.h"
-#include <future>
-#include <vector>
 
 using namespace std;
 
@@ -100,18 +102,24 @@ class Voxcraft {
                                     const vector<string> &experiment_configs,
                                     int device,
                                     int batch) {
-        VX3_SimulationManager sm(device, batch);
-        for (size_t i = 0; i < base_configs.size(); i++) {
-            auto config = VX3_Config(base_configs[i], experiment_configs[i]);
-            sm.addSim(config);
+        try {
+            VX3_SimulationManager sm(device, batch);
+            for (size_t i = 0; i < base_configs.size(); i++) {
+                auto config = VX3_Config(base_configs[i], experiment_configs[i]);
+                sm.addSim(config);
+            }
+            sm.runSims();
+            SubResult result;
+            for (auto &sim: sm.sims) {
+                get<0>(result).emplace_back(sim.result);
+                get<1>(result).emplace_back(sim.record);
+            }
+
+            return std::move(result);
+        } catch (const std::exception &exc) {
+            cerr << "Exception on device " << device << " batch " << batch << endl;
+            cerr << exc.what();
         }
-        sm.runSims();
-        SubResult result;
-        for (auto &sim : sm.sims) {
-            get<0>(result).emplace_back(sim.result);
-            get<1>(result).emplace_back(sim.record);
-        }
-        return std::move(result);
     }
 
     static SaveResult saveResultAndRecord(const VX3_SimulationResult &result,
@@ -142,6 +150,7 @@ Allowed options\
 "
 
 int main(int argc, char **argv) {
+    backward::SignalHandling sh{};
     // setup tools for parsing arguments
     po::options_description desc(APP_DESCRIPTION);
     desc.add_options()("help,h", "produce help message")(
@@ -202,11 +211,11 @@ int main(int argc, char **argv) {
                               (std::istreambuf_iterator<char>()));
 
             vector<string> bases, robots;
-            for (size_t i = 0; i < 32; i++) {
+            for (size_t i = 0; i < 256; i++) {
                 bases.push_back(base);
                 robots.push_back(robot);
             }
-            Voxcraft vx({}, 32);
+            Voxcraft vx({}, 128);
             auto result = vx.runSims(bases, robots);
 
             ofstream result_file((output / "sim.result").string());
