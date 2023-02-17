@@ -78,7 +78,7 @@ vector<bool> VX3_SimulationManager::runSims(int max_steps) {
     VcudaStreamSynchronize(stream);
     vector<thread> save_workers;
     for (size_t i = 0; i < sims.size(); i++) {
-        save_workers.emplace_back(VX3_SimulationManager::finishSim, sims[i], stream,
+        save_workers.emplace_back(VX3_SimulationManager::finishSim, std::ref(sims[i]), stream,
                                   result[i]);
     }
     for (auto &worker : save_workers)
@@ -88,9 +88,9 @@ vector<bool> VX3_SimulationManager::runSims(int max_steps) {
     return result;
 }
 
-void VX3_SimulationManager::finishSim(Simulation sim, cudaStream_t stream,
-                                      bool has_exception) {
-    if (not has_exception) {
+void VX3_SimulationManager::finishSim(Simulation &sim, cudaStream_t stream,
+                                      bool has_no_exception) {
+    if (has_no_exception) {
         sim.record.vox_size = sim.kernel.vox_size;
         sim.record.dt_frac = sim.kernel.dt_frac;
         sim.record.recommended_time_step = sim.kernel.recommended_time_step;

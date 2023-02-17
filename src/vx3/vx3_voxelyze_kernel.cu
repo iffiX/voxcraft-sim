@@ -112,13 +112,13 @@ void runFunctionAndReduce(FuncType func, vector<ResultType> &result,
         exec.d_kernels, p_sum, k_index, group_num, (ResultType *)exec.d_reduce1);
     CUDA_CHECK_AFTER_CALL();
 
-    //    VcudaStreamSynchronize(exec.stream);
-    //    ResultType *tmp;
-    //    VcudaMallocHost(&tmp, sizeof(ResultType) * p_sum.sums[kernel_ids.size() - 1]);
-    //    VcudaMemcpyAsync(tmp, exec.d_reduce1,
-    //                     sizeof(ResultType) * p_sum.sums[kernel_ids.size() - 1],
-    //                     cudaMemcpyDeviceToHost, exec.stream);
-    //    VcudaStreamSynchronize(exec.stream);
+//    VcudaStreamSynchronize(exec.stream);
+//    ResultType *tmp;
+//    VcudaMallocHost(&tmp, sizeof(ResultType) * p_sum.sums[kernel_ids.size() - 1]);
+//    VcudaMemcpyAsync(tmp, exec.d_reduce1,
+//                     sizeof(ResultType) * p_sum.sums[kernel_ids.size() - 1],
+//                     cudaMemcpyDeviceToHost, exec.stream);
+//    VcudaStreamSynchronize(exec.stream);
 
     auto partial_result = reduce_by_group<ResultType, ReduceOp>(
         exec.h_reduce_output, exec.d_reduce1, exec.d_reduce2, exec.d_reduce1,
@@ -663,9 +663,11 @@ __global__ void update_voxels(VX3_VoxelyzeKernel *kernels, GroupSizesPrefixSum p
 
     kernels[kid].updateVoxels(gt.tid);
     kernels[kid].updateVoxelTemperature(gt.tid);
+
     if (save_frame and kernels[kid].record_step_size and
-        kernels[kid].step % kernels[kid].real_step_size == 0)
+        kernels[kid].step % kernels[kid].real_step_size == 0) {
         kernels[kid].saveRecordFrame(gt.tid);
+    }
 }
 
 vector<bool> VX3_VoxelyzeKernelBatchExecutor::doTimeStep(
@@ -694,7 +696,6 @@ vector<bool> VX3_VoxelyzeKernelBatchExecutor::doTimeStep(
         }
     }
 
-    // Check host side kernel link divergence
     vector<size_t> do_time_step_indices;
     if (step % divergence_check_interval == 0) {
         auto link_diverged = isAnyLinkDiverged(kernel_indices);
@@ -709,50 +710,49 @@ vector<bool> VX3_VoxelyzeKernelBatchExecutor::doTimeStep(
     }
 
     // Update host side kernel frame storage
-    for (size_t i = 0; i < kernel_indices.size(); i++) {
-        if (result[i]) {
-            auto &k = *kernels[kernel_indices[i]];
-            bool should_save_frame =
-                save_frame and k.record_step_size and k.step % k.real_step_size == 0;
-            if (should_save_frame)
-                k.adjustRecordFrameStorage(k.frame_num + 1, stream);
-        }
+    for (auto idx : do_time_step_indices) {
+        auto &k = *kernels[idx];
+        bool should_save_frame =
+            save_frame and k.record_step_size and k.step % k.real_step_size == 0;
+        if (should_save_frame)
+            k.adjustRecordFrameStorage(k.frame_num + 1, stream);
     }
 
     // Synchronize host and device side kernel settings
     syncKernels();
+
+    // Wait for transmission to complete, if not, host may run too fast
+    // and change "step", "time" etc. before transmission is finished.
+    // Since host is fast, this means waiting for last update link and
+    // update voxel, and this transmission to complete.
+    VcudaStreamSynchronize(stream);
 
     // Batch update for all valid kernels
     runFunction(update_links, *this, true, VX3_VOXELYZE_KERNEL_UPDATE_LINK_BLOCK_SIZE,
                 do_time_step_indices);
     runFunction(update_voxels, *this, false, VX3_VOXELYZE_KERNEL_UPDATE_VOXEL_BLOCK_SIZE,
                 do_time_step_indices, save_frame);
-
     // Update metrics
     vector<size_t> update_metrics_indices;
-    for (size_t i = 0; i < kernel_indices.size(); i++) {
-        auto &k = *kernels[kernel_indices[i]];
-        if (result[i]) {
-            bool should_save_frame =
-                save_frame and k.record_step_size and k.step % k.real_step_size == 0;
-            if (should_save_frame)
-                k.frame_num++;
+    for (auto idx : do_time_step_indices) {
+        auto &k = *kernels[idx];
+        bool should_save_frame =
+            save_frame and k.record_step_size and k.step % k.real_step_size == 0;
+        if (should_save_frame)
+            k.frame_num++;
 
-            int cycle_step = FLOOR(k.temp_period, k.dt);
-            if (k.step % cycle_step == 0) {
-                // Sample at the same time point in the cycle, to avoid the
-                // impact of actuation as much as possible.
-                update_metrics_indices.push_back(kernel_indices[i]);
-            }
+        int cycle_step = FLOOR(k.temp_period, k.dt);
+        if (k.step % cycle_step == 0) {
+            // Sample at the same time point in the cycle, to avoid the
+            // impact of actuation as much as possible.
+            update_metrics_indices.push_back(idx);
         }
     }
     updateMetrics(update_metrics_indices);
-    for (size_t i = 0; i < kernel_indices.size(); i++) {
-        auto &k = *kernels[kernel_indices[i]];
-        if (result[i]) {
-            k.step++;
-            k.time += k.dt;
-        }
+    for (auto idx : do_time_step_indices) {
+        auto &k = *kernels[idx];
+        k.step++;
+        k.time += k.dt;
     }
     step++;
     return std::move(result);

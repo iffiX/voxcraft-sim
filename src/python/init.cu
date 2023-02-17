@@ -15,7 +15,7 @@ namespace py = pybind11;
 using namespace std;
 
 class Voxcraft {
-  public:
+public:
     using Result = tuple<vector<string>, vector<string>>;
     using RawResult = tuple<vector<VX3_SimulationResult>, vector<VX3_SimulationRecord>>;
     using SubResult = tuple<vector<VX3_SimulationResult>, vector<VX3_SimulationRecord>>;
@@ -23,8 +23,15 @@ class Voxcraft {
     vector<int> devices;
     size_t batch_size_per_device;
 
-    explicit Voxcraft(const vector<int> &devices_ = {}, size_t batch_size_per_device = 32)
-        : batch_size_per_device(batch_size_per_device) {
+    explicit Voxcraft(const vector<int> &devices_ = {},
+                      size_t _batch_size_per_device = VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE)
+            : batch_size_per_device(_batch_size_per_device) {
+        if (batch_size_per_device > VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE) {
+            cout << "Batch size per device exceeds limit "
+                 << VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE << ", scaling down to accommodate"
+                 << endl;
+            batch_size_per_device = VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE;
+        }
         if (devices_.empty()) {
             int count;
             VcudaGetDeviceCount(&count);
@@ -41,7 +48,7 @@ class Voxcraft {
 
         if (base_configs.size() != experiment_configs.size())
             throw invalid_argument(
-                "Base config num is different from experiment config num.");
+                    "Base config num is different from experiment config num.");
         if (base_configs.empty())
             return std::move(results);
         size_t batch_size = devices.size() * batch_size_per_device;
@@ -60,19 +67,19 @@ class Voxcraft {
                 vector<string> sub_batch_base_configs(base_configs.begin() + start,
                                                       base_configs.begin() + end);
                 vector<string> sub_batch_experiment_configs(
-                    experiment_configs.begin() + start, experiment_configs.begin() + end);
+                        experiment_configs.begin() + start, experiment_configs.begin() + end);
                 async_raw_results.emplace_back(
-                    async(&Voxcraft::runBatchedSims, sub_batch_base_configs,
-                          sub_batch_experiment_configs, device));
+                        async(&Voxcraft::runBatchedSims, sub_batch_base_configs,
+                              sub_batch_experiment_configs, device, b));
             }
             for (auto &result : async_raw_results) {
                 auto experiment_result = result.get();
                 get<0>(raw_results)
-                    .insert(get<0>(raw_results).end(), get<0>(experiment_result).begin(),
-                            get<0>(experiment_result).end());
+                        .insert(get<0>(raw_results).end(), get<0>(experiment_result).begin(),
+                                get<0>(experiment_result).end());
                 get<1>(raw_results)
-                    .insert(get<1>(raw_results).end(), get<1>(experiment_result).begin(),
-                            get<1>(experiment_result).end());
+                        .insert(get<1>(raw_results).end(), get<1>(experiment_result).begin(),
+                                get<1>(experiment_result).end());
             }
             offset += experiment_num;
         }
@@ -91,11 +98,12 @@ class Voxcraft {
         return std::move(results);
     }
 
-  private:
+private:
     static SubResult runBatchedSims(const vector<string> &base_configs,
                                     const vector<string> &experiment_configs,
-                                    int device) {
-        VX3_SimulationManager sm(device);
+                                    int device,
+                                    int batch) {
+        VX3_SimulationManager sm(device, batch);
         for (size_t i = 0; i < base_configs.size(); i++) {
             auto config = VX3_Config(base_configs[i], experiment_configs[i]);
             sm.addSim(config);
@@ -119,7 +127,7 @@ class Voxcraft {
 PYBIND11_MODULE(voxcraft, m) {
     py::class_<Voxcraft>(m, "Voxcraft")
         .def(py::init<const vector<int> &, size_t>(), py::arg("devices") = vector<int>{},
-             py::arg("batch_size_per_device") = 32)
+             py::arg("batch_size_per_device") = VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE)
         .def_readwrite("devices", &Voxcraft::devices)
         .def_readwrite("batch_size_per_device", &Voxcraft::batch_size_per_device)
         .def("run_sims", &Voxcraft::runSims, py::arg("base_configs"),

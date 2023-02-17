@@ -67,7 +67,7 @@ class Voxcraft {
                     experiment_configs.begin() + start, experiment_configs.begin() + end);
                 async_raw_results.emplace_back(
                     async(&Voxcraft::runBatchedSims, sub_batch_base_configs,
-                          sub_batch_experiment_configs, device));
+                          sub_batch_experiment_configs, device, b));
             }
             for (auto &result : async_raw_results) {
                 auto experiment_result = result.get();
@@ -98,8 +98,9 @@ class Voxcraft {
   private:
     static SubResult runBatchedSims(const vector<string> &base_configs,
                                     const vector<string> &experiment_configs,
-                                    int device) {
-        VX3_SimulationManager sm(device);
+                                    int device,
+                                    int batch) {
+        VX3_SimulationManager sm(device, batch);
         for (size_t i = 0; i < base_configs.size(); i++) {
             auto config = VX3_Config(base_configs[i], experiment_configs[i]);
             sm.addSim(config);
@@ -201,12 +202,19 @@ int main(int argc, char **argv) {
                               (std::istreambuf_iterator<char>()));
 
             vector<string> bases, robots;
-            for (size_t i = 0; i < 256; i++) {
+            for (size_t i = 0; i < 32; i++) {
                 bases.push_back(base);
                 robots.push_back(robot);
             }
-            Voxcraft vx({}, 128);
-            vx.runSims(bases, robots);
+            Voxcraft vx({}, 32);
+            auto result = vx.runSims(bases, robots);
+
+            ofstream result_file((output / "sim.result").string());
+            ofstream record_file((output / "sim.history").string());
+            if (not result_file.is_open() or not record_file.is_open())
+                throw std::invalid_argument("Cannot open output path");
+            result_file << get<0>(result)[0];
+            record_file << get<1>(result)[0];
         }
     }
 }
