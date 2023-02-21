@@ -2,8 +2,6 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
-#include <backward-cpp/backward.hpp>
-
 #include "vx3/vx3_simulation_manager.h"
 #include "vxa/vx3_config.h"
 
@@ -24,8 +22,6 @@ Allowed options\
 //if the executable `vx3_node_worker' doesn't exist in the same path, use -w <worker> to specify the path.\n\
 
 int main(int argc, char **argv) {
-    backward::SignalHandling sh{};
-
     // setup tools for parsing arguments
     po::options_description desc(APP_DESCRIPTION);
     desc.add_options()("help,h", "produce help message")(

@@ -1,6 +1,7 @@
 #ifndef VX3_CONF_H
 #define VX3_CONF_H
-// #define DEBUG_CUDA_KERNEL  true
+// #define DEBUG_SOA  true
+// #define DEBUG_SIMULATION true
 
 #define VX3_VOXELYZE_KERNEL_ALLOCATE_FRAME_NUM      500
 

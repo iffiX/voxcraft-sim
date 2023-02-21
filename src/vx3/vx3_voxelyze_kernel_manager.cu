@@ -94,6 +94,8 @@ VX3_VoxelyzeKernelManager::createKernelFromConfig(const VX3_Config &config,
     VcudaMallocAsync(&kernel.target_indices, sizeof(Vindex) * target_num, stream);
     VcudaMemcpyAsync(kernel.target_indices, tmp_target_indices,
                      sizeof(Vindex) * target_num, cudaMemcpyHostToDevice, stream);
+    // Make sure all host data are transferred
+    VcudaStreamSynchronize(stream);
     VcudaFreeHost(tmp_target_indices);
     kernel.target_num = target_num;
 
@@ -109,6 +111,8 @@ void VX3_VoxelyzeKernelManager::freeKernel(VX3_VoxelyzeKernel &kernel, const cud
     VcudaFreeAsync(kernel.d_time_points, stream);
     VcudaFreeAsync(kernel.d_link_record, stream);
     VcudaFreeAsync(kernel.d_voxel_record, stream);
+    // Make sure all free actions are finished
+    VcudaStreamSynchronize(stream);
 }
 
 void VX3_VoxelyzeKernelManager::addVoxelMaterial(

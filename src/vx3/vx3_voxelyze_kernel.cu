@@ -636,6 +636,9 @@ void VX3_VoxelyzeKernelBatchExecutor::free() {
     d_reduce1 = nullptr;
     d_reduce2 = nullptr;
     d_sizes = nullptr;
+
+    // Make sure all free actions are completed
+    VcudaStreamSynchronize(stream);
 }
 
 /*****************************************************************************

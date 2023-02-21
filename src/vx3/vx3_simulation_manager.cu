@@ -1,23 +1,30 @@
 #include "vx3_simulation_manager.h"
 
-#include "utils/vx3_conf.h"
-#include "vx3/vx3_voxelyze_kernel.cuh"
-#include <boost/format.hpp>
 #include <iostream>
 #include <queue>
 #include <stack>
 #include <thread>
+#include <fmt/format.h>
+#include "utils/vx3_conf.h"
+#include "vx3/vx3_voxelyze_kernel.cuh"
 
 using namespace std;
+using namespace fmt;
 using namespace boost;
 
 void VX3_SimulationManager::addSim(const VX3_Config &config) {
+#ifdef DEBUG_SIMULATION
+    print("(Device {}, Batch {}) begin adding sim {}\n", device, batch, sims.size());
+#endif
     sims.emplace_back();
     auto &sim = sims.back();
     sim.kernel = sim.kernel_manager.createKernelFromConfig(config, stream);
     // rescale the whole space. so history file can contain less digits.
     // ( e.g. not 0.000221, but 2.21 )
     sim.record.rescale = VX3_RECORD_RESCALE;
+#ifdef DEBUG_SIMULATION
+    print("(Device {}, Batch {}) end adding sim {}\n", device, batch, sims.size());
+#endif
 }
 
 vector<bool> VX3_SimulationManager::runSims(int max_steps) {
@@ -28,7 +35,7 @@ vector<bool> VX3_SimulationManager::runSims(int max_steps) {
     vector<bool> result(sims.size(), true);
     for (auto &sim : sims) {
         if (sim.kernel.ctx.voxels.size() == 0 and sim.kernel.ctx.links.size() == 0) {
-            cout << (format{"(Device %d, Batch %d)"} % device % batch).str()
+            cout << format("(Device {}, Batch {})", device, batch)
                  << COLORCODE_BOLD_RED << "No links and no voxels. Simulation "
                  << sim_index << " abort. " << COLORCODE_RESET << endl;
             sim.is_finished = true;
@@ -47,7 +54,14 @@ vector<bool> VX3_SimulationManager::runSims(int max_steps) {
         }
         sim_index++;
     }
+
+#ifdef DEBUG_SIMULATION
+    print("(Device {}, Batch {}) begin init sims\n", device, batch);
+#endif
     exec.init(kernels, stream, -1, VX3_RECORD_RESCALE);
+#ifdef DEBUG_SIMULATION
+    print("(Device {}, Batch {}) end init sims\n", device, batch);
+#endif
 
     for (int step = 0; step < max_steps; step++) { // Maximum Steps 1000000
         vector<size_t> kernel_indices;
@@ -67,29 +81,50 @@ vector<bool> VX3_SimulationManager::runSims(int max_steps) {
         auto step_result = exec.doTimeStep(kernel_indices);
         for (size_t i = 0; i < kernels.size(); i++) {
             if (not step_result[i]) {
-                cout << (format{"(Device %d, Batch %d)"} % device % batch).str()
+                cout << format("(Device {}, Batch {})", device, batch)
                      << COLORCODE_BOLD_RED "Simulation " << sim_indices[i]
                      << " diverged.\n" COLORCODE_RESET << endl;
                 sims[sim_indices[i]].is_finished = true;
                 result[sim_indices[i]] = false;
             }
         }
+#ifdef DEBUG_SIMULATION
+        print("(Device {}, Batch {}) step {} finished\n", device, batch, step);
+#endif
     }
     VcudaStreamSynchronize(stream);
     vector<thread> save_workers;
+#ifdef DEBUG_SIMULATION
+    print("(Device {}, Batch {}) starting save workers\n", device, batch);
+#endif
     for (size_t i = 0; i < sims.size(); i++) {
         save_workers.emplace_back(VX3_SimulationManager::finishSim, std::ref(sims[i]), stream,
-                                  result[i]);
+                                  result[i], device, batch, i);
     }
     for (auto &worker : save_workers)
         worker.join();
+#ifdef DEBUG_SIMULATION
+    print("(Device {}, Batch {}) saving finished\n", device, batch);
+#endif
+
     exec.free();
+
     VcudaStreamDestroy(stream);
+#ifdef DEBUG_SIMULATION
+    print("(Device {}, Batch {}) cleaning up finished\n", device, batch);
+#endif
     return result;
 }
 
 void VX3_SimulationManager::finishSim(Simulation &sim, cudaStream_t stream,
-                                      bool has_no_exception) {
+                                      bool has_no_exception,
+                                      int device, int batch, int sim_index) {
+    // For sub threads, we also need to set device,
+    // otherwise calls will go to GPU 0
+    VcudaSetDevice(device);
+#ifdef DEBUG_SIMULATION
+    print("(Device {}, Batch {}, Sim {}) worker started\n", device, batch, sim_index);
+#endif
     if (has_no_exception) {
         sim.record.vox_size = sim.kernel.vox_size;
         sim.record.dt_frac = sim.kernel.dt_frac;
@@ -101,11 +136,23 @@ void VX3_SimulationManager::finishSim(Simulation &sim, cudaStream_t stream,
                 Vfloat(voxel_material.g) / 255., Vfloat(voxel_material.b) / 255.,
                 Vfloat(voxel_material.a) / 255.);
         }
-
+#ifdef DEBUG_SIMULATION
+        print("(Device {}, Batch {}, Sim {}) begin saving\n", device, batch, sim_index);
+#endif
         saveResult(sim, stream);
+#ifdef DEBUG_SIMULATION
+        print("(Device {}, Batch {}, Sim {}) result saved\n", device, batch, sim_index);
+#endif
         saveRecord(sim, stream);
+#ifdef DEBUG_SIMULATION
+        print("(Device {}, Batch {}, Sim {}) record saved\n", device, batch, sim_index);
+#endif
     }
     sim.kernel_manager.freeKernel(sim.kernel, stream);
+
+#ifdef DEBUG_SIMULATION
+    print("(Device {}, Batch {}, Sim {}) kernel freed\n", device, batch, sim_index);
+#endif
 }
 
 void VX3_SimulationManager::saveResult(Simulation &sim, cudaStream_t stream) {
@@ -125,7 +172,6 @@ void VX3_SimulationManager::saveResult(Simulation &sim, cudaStream_t stream) {
     vector<VX3_VoxelMaterial> voxel_materials;
     sim.kernel.ctx.voxels.read(voxels, stream);
     sim.kernel.ctx.voxel_materials.read(voxel_materials, stream);
-
     sim.result.num_measured_voxel = 0;
     sim.result.total_distance_of_all_voxels = 0.0;
     for (auto &voxel : voxels) {
@@ -164,6 +210,9 @@ void VX3_SimulationManager::saveRecord(Simulation &sim, cudaStream_t stream) {
                      sizeof(VX3_SimulationVoxelRecord) * sim.kernel.ctx.voxels.size() *
                          sim.kernel.frame_num,
                      cudaMemcpyDeviceToHost, stream);
+    // Make sure all device side data are transferred
+    VcudaStreamSynchronize(stream);
+
     sim.record.steps.assign(tmp_steps, tmp_steps + sim.kernel.frame_num);
     sim.record.time_points.assign(tmp_time_points,
                                   tmp_time_points + sim.kernel.frame_num);

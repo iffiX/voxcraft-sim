@@ -4,13 +4,15 @@
 
 #ifndef VX3_CONFIG_H
 #define VX3_CONFIG_H
+
+#include <vector>
+#include <sstream>
+#include <boost/property_tree/ptree.hpp>
+#include <boost/property_tree/xml_parser.hpp>
+
 #include "utils/vx3_def.h"
 #include "utils/vx3_vec3d.h"
 #include "utils/vx3_math_tree.h"
-#include <boost/property_tree/ptree.hpp>
-#include <boost/property_tree/xml_parser.hpp>
-#include <sstream>
-#include <vector>
 
 class VX3_Config;
 struct VX3_LatticeConfig;

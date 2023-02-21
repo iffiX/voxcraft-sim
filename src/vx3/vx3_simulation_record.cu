@@ -3,12 +3,13 @@
 //
 #include "vx3_simulation_record.h"
 
-#include <boost/format.hpp>
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/xml_parser.hpp>
+#include <fmt/format.h>
 
 namespace pt = boost::property_tree;
 using namespace std;
+using namespace fmt;
 
 string saveSimulationResult(const string &input_dir, const string &vxa_filename,
                             const string &vxd_filename,
@@ -90,44 +91,44 @@ string saveSimulationRecord(const VX3_SimulationRecord &record) {
     for (auto &mat : record.voxel_materials) {
         if (get<0>(mat) == 0)
             continue;
-        ss << boost::format{"{{{setting}}}"
-                            "<matcolor>"
-                            "<id>%d</id>"
-                            "<r>%.2f</r>"
-                            "<g>%.2f</g>"
-                            "<b>%.2f</b>"
-                            "<a>%.2f</a>"
-                            "</matcolor>"} %
-                  get<0>(mat) % get<1>(mat) % get<2>(mat) % get<3>(mat) % get<4>(mat)
+        ss << "{{{setting}}}"
+           << format("<matcolor>"
+                     "<id>{:d}</id>"
+                     "<r>{:.2f}</r>"
+                     "<g>{:.2f}</g>"
+                     "<b>{:.2f}</b>"
+                     "<a>{:.2f}</a>"
+                     "</matcolor>",
+                     get<0>(mat), get<1>(mat), get<2>(mat), get<3>(mat), get<4>(mat))
            << endl;
     }
     ss << "{{{setting}}}<voxel_size>" << record.vox_size << "</voxel_size>" << endl;
-    ss << boost::format{"real_stepsize: %d; recommendedTimeStep %f; d_v3->DtFrac %f;"} %
-              record.real_step_size % record.recommended_time_step % record.dt_frac
+    ss << format("real_stepsize: {:d}; recommendedTimeStep {:f}; d_v3->DtFrac {:f};",
+                 record.real_step_size, record.recommended_time_step, record.dt_frac)
        << endl;
 
     for (size_t f = 0; f < record.steps.size(); f++) {
         if (not record.voxel_frames[f].empty()) {
-            ss << boost::format{"<<<Step%d Time:%f>>>"} % record.steps[f] %
-                      record.time_points[f];
+            ss << format("<<<Step{:d} Time:{:f}>>>", record.steps[f],
+                         record.time_points[f]);
             for (auto &v : record.voxel_frames[f]) {
-                ss << boost::format{"%.1f,%.1f,%.1f,"} % v.x % v.y % v.z;
-                ss << boost::format{"%.1f,%.2f,%.2f,%.2f,"} % v.orient_angle %
-                          v.orient_x % v.orient_y % v.orient_z;
-                ss << boost::format{"%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,"} % v.nnn_x %
-                          v.nnn_y % v.nnn_z % v.ppp_x % v.ppp_y % v.ppp_z;
-                ss << boost::format{"%d,"} % v.material;       // for coloring
-                ss << boost::format{"%.1f,"} % v.local_signal; // for coloring as well.
+                ss << format("{:.1f},{:.1f},{:.1f},", v.x, v.y, v.z);
+                ss << format("{:.1f},{:.2f},{:.2f},{:.2f},", v.orient_angle, v.orient_x,
+                             v.orient_y, v.orient_z);
+                ss << format("{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},", v.nnn_x,
+                             v.nnn_y, v.nnn_z, v.ppp_x, v.ppp_y, v.ppp_z);
+                ss << format("{:d},", v.material);       // for coloring
+                ss << format("{:.1f},", v.local_signal); // for coloring as well.
                 ss << ";";
             }
             ss << "<<<>>>";
         }
         if (not record.link_frames[f].empty()) {
             // Links
-            ss << boost::format{"|[[[%d]]]"} % record.steps[f];
+            ss << format("|[[[{:d}]]]", record.steps[f]);
             for (auto &l : record.link_frames[f]) {
-                ss << boost::format{"%.4f,%.4f,%.4f,"} % l.pos_x % l.pos_y % l.pos_z;
-                ss << boost::format{"%.4f,%.4f,%.4f,"} % l.neg_x % l.neg_y % l.neg_z;
+                ss << format("{:.4f},{:.4f},{:.4f},", l.pos_x, l.pos_y, l.pos_z);
+                ss << format("{:.4f},{:.4f},{:.4f},", l.neg_x, l.neg_y, l.neg_z);
                 ss << ";";
             }
             ss << "[[[]]]";

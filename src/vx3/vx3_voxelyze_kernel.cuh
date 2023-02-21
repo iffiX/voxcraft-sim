@@ -8,7 +8,6 @@
 #include "vx3/vx3_simulation_record.h"
 #include "vx3/vx3_voxel.h"
 #include "vx3/vx3_voxel_material.h"
-#include <thrust/device_vector.h>
 #include <vector>
 
 struct __align__(8) VX3_VoxelyzeKernel {

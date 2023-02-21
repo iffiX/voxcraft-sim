@@ -1,17 +1,16 @@
-cmake_minimum_required(VERSION 3.12.0)
+cmake_minimum_required(VERSION 3.22.0)
 # if we need -fPIC globally
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Set build type to Release by default
-set(CMAKE_BUILD_TYPE DEBUG)
-# set(CMAKE_BUILD_TYPE RELEASE)
+# set(CMAKE_BUILD_TYPE DEBUG)
+set(CMAKE_BUILD_TYPE RELEASE)
 if (NOT DEFINED CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE RELEASE)
 endif()
 
-set(CMAKE_CUDA_COMPILER /home/iffi/miniconda3/envs/cuda-11.7/bin/nvcc)
 #set(CMAKE_CUDA_COMPILER /usr/local/cuda-11.8/bin/nvcc)
-#set(CMAKE_CUDA_COMPILER /home/mlw0504/miniconda3/envs/cuda/bin/nvcc)
+set(CMAKE_CUDA_COMPILER $ENV{HOME}/miniconda3/envs/cuda-11.7/bin/nvcc)
 
 project(voxcraft-sim LANGUAGES CXX CUDA)
 set(CMAKE_CXX_STANDARD 17)
@@ -21,7 +20,7 @@ set(CMAKE_CXX_STANDARD 17)
 find_package(Boost REQUIRED COMPONENTS filesystem program_options)
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 add_subdirectory(lib/pybind11)
-add_subdirectory(lib/backward-cpp)
+add_subdirectory(lib/fmt)
 
 # CUDA options
 find_package(CUDA) # for CUDA_SELECT_NVCC_ARCH_FLAGS function
@@ -45,6 +44,10 @@ if (NOT DEFINED CUDA_ARCH)
   endif()
 endif()
 
+if ((CUDA_VERSION_MAJOR LESS 11) OR ((CUDA_VERSION_MAJOR EQUAL 11) AND (CUDA_VERSION_MINOR LESS 6)))
+  message(FATAL_ERROR "Minimum CUDA version required is 11.6")
+endif()
+
 string(TOUPPER "${CMAKE_BUILD_TYPE}" uppercase_CMAKE_BUILD_TYPE)
 if(uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
   if (NOT DEFINED CUDA_DEBUG)
@@ -52,21 +55,20 @@ if(uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
   endif()
 endif(uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
 
-##-MG means debug info in GPU, so you can step in GPU kernels
-#if (CUDA_DEBUG)
-#  message("Set CUDA_DEBUG to ON.")
-#  set(CUDA_OPTIONS $<$<COMPILE_LANGUAGE:CUDA>:-G ${ARCH_FLAGS} --expt-relaxed-constexpr>)
-#else (CUDA_DEBUG)
-#  message("Set CUDA_DEBUG to OFF.")
-#  set(CUDA_OPTIONS $<$<COMPILE_LANGUAGE:CUDA>: ${ARCH_FLAGS} --expt-relaxed-constexpr>)
-#endif(CUDA_DEBUG)
+#-MG means debug info in GPU, so you can step in GPU kernels
+if (CUDA_DEBUG)
+  message("Set CUDA_DEBUG to ON.")
+  set(CUDA_OPTIONS $<$<COMPILE_LANGUAGE:CUDA>:-G ${ARCH_FLAGS} --expt-relaxed-constexpr>)
+else (CUDA_DEBUG)
+  message("Set CUDA_DEBUG to OFF.")
+  set(CUDA_OPTIONS $<$<COMPILE_LANGUAGE:CUDA>: ${ARCH_FLAGS} --expt-relaxed-constexpr>)
+endif(CUDA_DEBUG)
 
-message("Set CUDA_DEBUG to OFF.")
-set(CUDA_OPTIONS $<$<COMPILE_LANGUAGE:CUDA>: ${ARCH_FLAGS} --expt-relaxed-constexpr>)
 ################################################################
 # Main builds
 ################################################################
 include_directories(lib)
+include_directories(lib/fmt/include)
 include_directories(src)
 include_directories(src/vx3)
 include_directories(src/utils)
@@ -78,7 +80,7 @@ file(GLOB VXA_SRC_cu src/vxa/*.cu)
 file(GLOB PYTHON_SRC_cu src/python/*.cu)
 
 add_library(voxelyze3 ${UTILS_SRC_cu} ${VX3_SRC_cu} ${VXA_SRC_cu})
-target_link_libraries(voxelyze3 PUBLIC ${Boost_LIBRARIES})
+target_link_libraries(voxelyze3 PUBLIC ${Boost_LIBRARIES} fmt::fmt)
 set_target_properties(voxelyze3 PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 target_compile_options(voxelyze3 PUBLIC ${CUDA_OPTIONS})
 
@@ -87,18 +89,12 @@ target_link_libraries(voxcraft-sim PUBLIC voxelyze3)
 target_link_libraries(voxcraft-sim PUBLIC ${Boost_LIBRARIES})
 set_target_properties(voxcraft-sim PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 target_compile_options(voxcraft-sim PUBLIC ${CUDA_OPTIONS})
-if(uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
-add_backward(voxcraft-sim)
-endif(uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
 
 add_executable(voxcraft-test src/executables/test.cu)
 target_link_libraries(voxcraft-test PUBLIC voxelyze3)
 target_link_libraries(voxcraft-test PUBLIC ${Boost_LIBRARIES})
 set_target_properties(voxcraft-test PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 target_compile_options(voxcraft-test PUBLIC ${CUDA_OPTIONS})
-if(uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
-  add_backward(voxcraft-test)
-endif(uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
 
 pybind11_add_module(voxcraft SHARED ${PYTHON_SRC_cu})
 target_link_libraries(voxcraft PRIVATE

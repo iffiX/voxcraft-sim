@@ -8,7 +8,7 @@
 #include <cuda/std/tuple>
 #include <vector>
 
-#ifndef DEBUG_CUDA_KERNEL
+#ifndef DEBUG_SOA
 #define DEBUG_INPUT
 #define DEBUG_OUTPUT_AND_ASSERT(index, max_size) assert(index < max_size);
 #define DEBUG_FORWARD
@@ -206,6 +206,7 @@ struct VX3_hdStructOfArrays
             constexpr auto i = refl::trait::index_of_v<decltype(member), field_members>;
             helper::resize(cuda::std::get<i>(_storage), 0, stream);
         });
+        VcudaStreamSynchronize(stream);
         _storage_size = 0;
     }
 
@@ -214,6 +215,7 @@ struct VX3_hdStructOfArrays
             constexpr auto i = refl::trait::index_of_v<decltype(member), field_members>;
             helper::resize(cuda::std::get<i>(_storage), new_size, stream);
         });
+        VcudaStreamSynchronize(stream);
         _storage_size = new_size;
     }
 
@@ -239,6 +241,9 @@ struct VX3_hdStructOfArrays
                 for (size_t j = 0; j < num; j++)
                     tmp[j] = member(input[j]);
                 helper::fill(cuda::std::get<i>(_storage), tmp, num, stream);
+
+                // Make sure all host side data are transferred
+                VcudaStreamSynchronize(stream);
                 delete[] tmp;
             } else {
                 // Flattens arrays, interleave elements as A1, B1, C1, A2, B2, C2, ...
@@ -253,6 +258,9 @@ struct VX3_hdStructOfArrays
                 }
                 // Note: since we flattens the array, copy num * length elements
                 helper::fill(cuda::std::get<i>(_storage), tmp, num * length, stream);
+
+                // Make sure all host side data are transferred
+                VcudaStreamSynchronize(stream);
                 delete[] tmp;
             }
         });
@@ -272,6 +280,9 @@ struct VX3_hdStructOfArrays
             if constexpr (not std::is_array_v<type>) {
                 auto tmp = new type[_storage_size];
                 helper::read(cuda::std::get<i>(_storage), tmp, _storage_size, stream);
+                // Make sure all device side data are transferred
+                VcudaStreamSynchronize(stream);
+
                 for (size_t j = 0; j < _storage_size; j++)
                     member(output[j]) = tmp[j];
             } else {
@@ -284,6 +295,9 @@ struct VX3_hdStructOfArrays
                 // Note: since we flattens the array, copy _storage_size * length elements
                 helper::read(cuda::std::get<i>(_storage), tmp, _storage_size * length,
                              stream);
+                // Make sure all device side data are transferred
+                VcudaStreamSynchronize(stream);
+
                 for (size_t j = 0; j < length; j++) {
                     for (size_t k = 0; k < _storage_size; k++) {
                         member(output[k])[j] = tmp[j * _storage_size + k];

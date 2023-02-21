@@ -5,13 +5,14 @@
 #include "vxa/vx3_config.h"
 
 #include <boost/algorithm/string.hpp>
-#include <boost/format.hpp>
+#include <fmt/format.h>
 #include <iostream>
 #include <queue>
 #include <stack>
 
 using namespace std;
 using namespace boost;
+using namespace fmt;
 namespace pt = boost::property_tree;
 
 void split(const string &s, char delim, vector<string> &elems) {
@@ -57,7 +58,8 @@ void VX3_Config::parseSettings() {
 
     if (not structure.has_phase_offsets) {
         for (size_t v = 0; v < structure.data.size(); v++)
-            structure.phase_offsets[v] = palette.materials[structure.data[v]].material_temp_phase;
+            structure.phase_offsets[v] =
+                palette.materials[structure.data[v]].material_temp_phase;
     }
 
     // VXA.RawPrint
@@ -178,7 +180,7 @@ void VX3_Config::parseMathExpression(VX3_MathTreeExpression &expr,
                 token.value = 8;
             } else {
                 throw std::invalid_argument(
-                    (format{"Unknown token variable: %s"} % tok.second).str().c_str());
+                    format("Unknown token variable: {}", tok.second));
             }
         } else if (tok.first == "mtCONST") {
             token.op = mtCONST;
@@ -230,8 +232,7 @@ void VX3_Config::parseMathExpression(VX3_MathTreeExpression &expr,
         } else if (tok.first == "mtNORMALCDF") {
             token.op = mtNORMALCDF;
         } else {
-            throw std::invalid_argument(
-                (format{"Unknown token operation: %s"} % tok.first).str().c_str());
+            throw std::invalid_argument(format("Unknown token operation: {}", tok.first));
         }
         expr.push_back(token);
     }
@@ -249,7 +250,7 @@ void VX3_Config::postFixTraversal(const pt::ptree &expr_tree, const std::string 
         trim_right(op);
         postFixTraversal(child.second, op, value, raw_tokens);
     }
-    raw_tokens.emplace_back(make_pair(root_op, root_value));
+    raw_tokens.emplace_back(root_op, root_value);
 }
 
 void VX3_Config::merge(pt::ptree &vxa, const pt::ptree &vxd) {
@@ -341,10 +342,8 @@ void VX3_StructureConfig::read(const boost::property_tree::ptree &structure_tree
     for (auto &layer : structure_tree.get_child("Data")) {
         auto raw_layer = layer.second.get<string>("");
         if (raw_layer.length() != voxel_per_layer_num)
-            throw std::invalid_argument((format{"Data layer %d size is %d, required %d"} %
-                                         l % raw_layer.length() % voxel_per_layer_num)
-                                            .str()
-                                            .c_str());
+            throw std::invalid_argument(format("Data layer {} size is {}, required {}", l,
+                                               raw_layer.length(), voxel_per_layer_num));
         for (size_t i = 0; i < voxel_per_layer_num; i++)
             data[l * voxel_per_layer_num + i] = (char)(raw_layer[i] - '0');
         l++;
@@ -372,11 +371,9 @@ bool VX3_StructureConfig::read_float_layer(
         vector<string> splitted_values;
         split(layer.second.get<string>(""), ',', splitted_values);
         if (splitted_values.size() != voxel_per_layer_num)
-            throw std::invalid_argument((format{"%s layer %d size is %d, required %d"} %
-                                         section % l % splitted_values.size() %
-                                         voxel_per_layer_num)
-                                            .str()
-                                            .c_str());
+            throw std::invalid_argument(format("{} layer {} size is {}, required {}",
+                                               section, l, splitted_values.size(),
+                                               voxel_per_layer_num));
         for (size_t i = 0; i < voxel_per_layer_num; i++) {
             layer_data[l * voxel_per_layer_num + i] = stof(splitted_values[i]);
         }
@@ -395,11 +392,9 @@ bool VX3_StructureConfig::read_vec3f_layer(
         vector<string> splitted_values;
         split(layer.second.get<string>(""), ',', splitted_values);
         if (splitted_values.size() != 3 * voxel_per_layer_num)
-            throw std::invalid_argument(
-                (format{"Amplitude layer %d size is %d, required %d"} % l %
-                 splitted_values.size() % (3 * voxel_per_layer_num))
-                    .str()
-                    .c_str());
+            throw std::invalid_argument(format("{} layer {} size is {}, required {}",
+                                               section, l, splitted_values.size(),
+                                               3 * voxel_per_layer_num));
         for (size_t i = 0; i < voxel_per_layer_num; i++) {
             layer_data[l * voxel_per_layer_num + i] =
                 Vec3f(stof(splitted_values[i * 3]), stof(splitted_values[i * 3 + 1]),

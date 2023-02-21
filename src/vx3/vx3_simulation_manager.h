@@ -37,7 +37,8 @@ class VX3_SimulationManager {
     std::vector<bool> runSims(int max_steps = 1000000);
 
   private:
-    static void finishSim(Simulation &sim, cudaStream_t stream, bool has_no_exception);
+    static void finishSim(Simulation &sim, cudaStream_t stream, bool has_no_exception,
+                          int device, int batch, int sim_index);
     static void saveResult(Simulation &sim, cudaStream_t stream);
     static void saveRecord(Simulation &sim, cudaStream_t stream);
 };

@@ -2363,8 +2363,8 @@ public:
 template <typename T, size_t N>
 class field_descriptor : public member_descriptor_base<T, N>
 {
-    using typename member_descriptor_base<T, N>::member;
-    static_assert(trait::is_field_v<member>);
+    using memberX = typename member_descriptor_base<T, N>::member;
+    static_assert(trait::is_field_v<memberX>);
 
 public:
 
@@ -2378,13 +2378,13 @@ public:
      * get_t<0, member_list<Foo>>::value_type -> const int*
      * \endcode
      */
-    typedef typename member::value_type value_type;
+    typedef typename memberX::value_type value_type;
 
     /**
      * Whether the field is static or not.
      * \copydetails refl::descriptor::is_static
      */
-    static constexpr bool is_static{ !std::is_member_object_pointer_v<decltype(member::pointer)> };
+    static constexpr bool is_static{ !std::is_member_object_pointer_v<decltype(memberX::pointer)> };
 
     /**
      * Whether the field is const or not.
@@ -2396,7 +2396,7 @@ public:
      * A member pointer to the reflected field of the appropriate type.
      * \copydetails refl::descriptor::get_pointer
      */
-    static constexpr auto pointer{ member::pointer };
+    static constexpr auto pointer{ memberX::pointer };
 
 private:
 
@@ -2411,7 +2411,7 @@ public:
     template <decltype(nullptr) = nullptr>
     static constexpr decltype(auto) get() noexcept
     {
-        return *member::pointer;
+        return *memberX::pointer;
     }
 
     /**
@@ -2421,7 +2421,7 @@ public:
     template <typename U>
     static constexpr decltype(auto) get(U&& target) noexcept
     {
-        return target.*(member::pointer);
+        return target.*(memberX::pointer);
     }
 
     /**
@@ -2442,8 +2442,8 @@ public:
 template <typename T, size_t N>
 class function_descriptor : public member_descriptor_base<T, N>
 {
-    using typename member_descriptor_base<T, N>::member;
-    static_assert(trait::is_function_v<member>);
+    using memberX = typename member_descriptor_base<T, N>::member;
+    static_assert(trait::is_function_v<memberX>);
 
 public:
 
@@ -2454,9 +2454,9 @@ public:
      * \copydetails refl::descriptor::invoke
      */
     template <typename... Args>
-    static constexpr auto invoke(Args&&... args) -> decltype(member::invoke(std::declval<Args>()...))
+    static constexpr auto invoke(Args&&... args) -> decltype(memberX::invoke(std::declval<Args>()...))
     {
-        return member::invoke(std::forward<Args>(args)...);
+        return memberX::invoke(std::forward<Args>(args)...);
     }
 
     /**
@@ -2464,7 +2464,7 @@ public:
      * \copydetails refl::descriptor::return_type
      */
     template <typename... Args>
-    using return_type = decltype(member::invoke(std::declval<Args>()...));
+    using return_type = decltype(memberX::invoke(std::declval<Args>()...));
 
     /**
      * A synonym for invoke(args...).
@@ -2480,7 +2480,7 @@ public:
      * Returns a pointer to a non-overloaded function.
      * \copydetails refl::descriptor::get_pointer
      */
-    static constexpr auto pointer{ detail::get_function_pointer<member>(0) };
+    static constexpr auto pointer{ detail::get_function_pointer<memberX>(0) };
 
     /**
      * Whether the pointer member was correctly resolved to a concrete implementation.
@@ -2508,7 +2508,7 @@ public:
     template <typename Pointer>
     static constexpr auto resolve()
     {
-        return detail::resolve_function_pointer<member, Pointer>(0);
+        return detail::resolve_function_pointer<memberX, Pointer>(0);
     }
 
 };

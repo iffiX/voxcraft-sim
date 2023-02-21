@@ -34,7 +34,7 @@ struct VX3_Context {
 
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
-#ifndef DEBUG_CUDA_KERNEL
+#ifndef DEBUG_SOA
 #define DEBUG_ARGS(method)
 #else
 #define DEBUG_ARGS(method) , #method ": @file " __FILE__ " @line " TOSTRING(__LINE__)
