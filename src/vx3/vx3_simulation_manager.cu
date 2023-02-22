@@ -79,13 +79,13 @@ vector<bool> VX3_SimulationManager::runSims(int max_steps) {
             break;
 
         auto step_result = exec.doTimeStep(kernel_indices);
-        for (size_t i = 0; i < kernels.size(); i++) {
+        for (size_t i = 0; i < kernel_indices.size(); i++) {
             if (not step_result[i]) {
                 cout << format("(Device {}, Batch {})", device, batch)
-                     << COLORCODE_BOLD_RED "Simulation " << sim_indices[i]
+                     << COLORCODE_BOLD_RED "Simulation " << kernel_indices[i]
                      << " diverged.\n" COLORCODE_RESET << endl;
-                sims[sim_indices[i]].is_finished = true;
-                result[sim_indices[i]] = false;
+                sims[kernel_indices[i]].is_finished = true;
+                result[kernel_indices[i]] = false;
             }
         }
 #ifdef DEBUG_SIMULATION
