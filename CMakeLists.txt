@@ -3,13 +3,13 @@ cmake_minimum_required(VERSION 3.22.0)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Set build type to Release by default
-set(CMAKE_BUILD_TYPE DEBUG)
-# set(CMAKE_BUILD_TYPE RELEASE)
+# set(CMAKE_BUILD_TYPE DEBUG)
+set(CMAKE_BUILD_TYPE RELEASE)
 if (NOT DEFINED CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE RELEASE)
 endif()
 
-#set(CMAKE_CUDA_COMPILER /usr/local/cuda-11.8/bin/nvcc)
+# set(CMAKE_CUDA_COMPILER /usr/local/cuda-11.8/bin/nvcc)
 set(CMAKE_CUDA_COMPILER $ENV{HOME}/miniconda3/envs/cuda-11.7/bin/nvcc)
 
 project(voxcraft-sim LANGUAGES CXX CUDA)

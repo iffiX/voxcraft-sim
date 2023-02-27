@@ -11,12 +11,16 @@ using namespace boost;
 VX3_VoxelyzeKernel
 VX3_VoxelyzeKernelManager::createKernelFromConfig(const VX3_Config &config,
                                                   const cudaStream_t &stream) {
-    // Add the default "empty" material, then add user specified materials
-    ictx.voxel_materials.emplace_back(VX3_VoxelMaterial());
+
     for (auto &material_config : config.palette.materials) {
-        addVoxelMaterial(material_config, (int)ictx.voxel_materials.size(),
-                         config.lattice.lattice_dim, config.bond_damping_z,
-                         config.col_damping_z, config.slow_damping_z);
+        if (material_config.material_id == 0) {
+            // The default "empty" material
+            ictx.voxel_materials.emplace_back(VX3_VoxelMaterial());
+        } else {
+            addVoxelMaterial(material_config, (int)ictx.voxel_materials.size(),
+                             config.lattice.lattice_dim, config.bond_damping_z,
+                             config.col_damping_z, config.slow_damping_z);
+        }
     }
     // voxels and links (links are added when creating voxels)
     addVoxels(config.structure, config.lattice.lattice_dim);
@@ -102,7 +106,8 @@ VX3_VoxelyzeKernelManager::createKernelFromConfig(const VX3_Config &config,
     return kernel;
 }
 
-void VX3_VoxelyzeKernelManager::freeKernel(VX3_VoxelyzeKernel &kernel, const cudaStream_t &stream) {
+void VX3_VoxelyzeKernelManager::freeKernel(VX3_VoxelyzeKernel &kernel,
+                                           const cudaStream_t &stream) {
     kernel.ctx.link_materials.free(stream);
     kernel.ctx.voxel_materials.free(stream);
     kernel.ctx.links.free(stream);
@@ -213,7 +218,8 @@ void VX3_VoxelyzeKernelManager::addVoxels(const VX3_StructureConfig &structure_c
     }
 }
 
-void VX3_VoxelyzeKernelManager::addLink(short x, short y, short z, LinkDirection direction) {
+void VX3_VoxelyzeKernelManager::addLink(short x, short y, short z,
+                                        LinkDirection direction) {
     auto voxel1_coords = index3DToCoordinate(x, y, z);
     auto voxel2_coords = index3DToCoordinate(x + (short)xIndexVoxelOffset(direction),
                                              y + (short)yIndexVoxelOffset(direction),
@@ -264,7 +270,8 @@ void VX3_VoxelyzeKernelManager::setMathExpression(
         tokens[i] = expr[i];
 }
 
-inline uint64_t VX3_VoxelyzeKernelManager::index3DToCoordinate(short x, short y, short z) const {
+inline uint64_t VX3_VoxelyzeKernelManager::index3DToCoordinate(short x, short y,
+                                                               short z) const {
     return uint64_t(x) << 32 | uint64_t(y) << 16 | uint64_t(z);
 }
 

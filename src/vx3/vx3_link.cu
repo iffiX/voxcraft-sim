@@ -192,10 +192,6 @@ __device__ Quat3f VX3_Link::orientLink(VX3_Context &ctx, Vindex link) {
     L_S(angle1v, angle1v);
     L_S(angle2v, angle2v);
 
-    // assert non QNAN
-    assert(not isnan(angle1v.x) && not isnan(angle1v.y) && not isnan(angle1v.z));
-    assert(not isnan(angle2v.x) && not isnan(angle2v.y) && not isnan(angle2v.z));
-
     return total_rot;
 }
 
@@ -374,7 +370,7 @@ __device__ Vfloat VX3_Link::updateStrain(VX3_Context &ctx, Vindex link,
                                            L_G(current_transverse_strain_sum));
     } else {
         // Currently only linear material is supported
-        assert(false);
+        CUDA_PRINTF_ASSERT(false);
         //        float return_stress;
         //        if (axial_strain > L_G(max_strain)) {
         //            // if new territory on the stress/strain curve

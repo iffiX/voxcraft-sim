@@ -45,9 +45,6 @@ __device__ void VX3_Voxel::timeStep(VX3_VoxelyzeKernel &k, Vindex voxel, Vfloat 
     }
     fric_force = cur_force - fric_force;
 
-    // assert non QNAN
-    assert(not isnan(cur_force.x) && not isnan(cur_force.y) && not isnan(cur_force.z));
-
 #ifdef DEBUG_VOXEL_AND_LINK_VALUES
     CUDA_PRINTF_ASSERT(not isnan(cur_force.x));
     CUDA_PRINTF_ASSERT(not isnan(cur_force.y));

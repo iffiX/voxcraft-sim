@@ -36,6 +36,8 @@ struct VX3_PaletteConfig {
 };
 
 struct VX3_PaletteMaterialConfig {
+    int material_id;
+
     enum MaterialModel : int { MAT_LINEAR, MAT_LINEAR_FAIL };
 
     std::string name; // material name (unused)

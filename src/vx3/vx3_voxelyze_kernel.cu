@@ -42,7 +42,7 @@ void computePrefixSum(GroupSizesPrefixSum &sizes, Vsize group_num) {
 
 template <typename FuncType, typename... Args>
 void runFunction(FuncType func, const VX3_VoxelyzeKernelBatchExecutor &exec, bool is_link,
-                 int block_size, const vector<size_t> &kernel_indices, Args &&... args) {
+                 int block_size, const vector<size_t> &kernel_indices, Args &&...args) {
     if (kernel_indices.empty())
         return;
 
@@ -98,7 +98,8 @@ void runFunctionAndReduce(FuncType func, vector<ResultType> &result,
         return;
 
     if (result.size() != kernel_indices.size())
-        throw std::invalid_argument("Result vector size must be the same as kernel indices size.");
+        throw std::invalid_argument(
+            "Result vector size must be the same as kernel indices size.");
 
     vector<Vsize> group_len;
     GroupSizesPrefixSum p_sum;
@@ -133,28 +134,31 @@ void runFunctionAndReduce(FuncType func, vector<ResultType> &result,
         exec.d_kernels, p_sum, k_index, group_num, (ResultType *)exec.d_reduce1);
     CUDA_CHECK_AFTER_CALL();
 
-//    VcudaStreamSynchronize(exec.stream);
-//    ResultType *tmp;
-//    VcudaMallocHost(&tmp, sizeof(ResultType) * p_sum.sums[non_empty_kernel_relative_indices.size() - 1]);
-//    VcudaMemcpyAsync(tmp, exec.d_reduce1,
-//                     sizeof(ResultType) * p_sum.sums[non_empty_kernel_relative_indices.size() - 1],
-//                     cudaMemcpyDeviceToHost, exec.stream);
-//    VcudaStreamSynchronize(exec.stream);
-//    size_t offset = 0;
-//    for (size_t k = 0; k < non_empty_kernel_relative_indices.size(); k++) {
-//        std::cout << "Kernel " << k << ": ";
-//        for(size_t i = offset; i < p_sum.sums[k]; i++) {
-//            std::cout << ((float*)tmp)[i] << " ";
-//        }
-//        std::cout << std::endl;
-//        offset = p_sum.sums[k];
-//    }
+    //    // For debugging`
+    //    VcudaStreamSynchronize(exec.stream);
+    //    ResultType *tmp;
+    //    VcudaMallocHost(&tmp, sizeof(ResultType) *
+    //    p_sum.sums[non_empty_kernel_relative_indices.size() - 1]); VcudaMemcpyAsync(tmp,
+    //    exec.d_reduce1,
+    //                     sizeof(ResultType) *
+    //                     p_sum.sums[non_empty_kernel_relative_indices.size() - 1],
+    //                     cudaMemcpyDeviceToHost, exec.stream);
+    //    VcudaStreamSynchronize(exec.stream);
+    //    size_t offset = 0;
+    //    for (size_t k = 0; k < non_empty_kernel_relative_indices.size(); k++) {
+    //        std::cout << "Kernel " << k << ": ";
+    //        for(size_t i = offset; i < p_sum.sums[k]; i++) {
+    //            std::cout << ((float*)tmp)[i] << " ";
+    //        }
+    //        std::cout << std::endl;
+    //        offset = p_sum.sums[k];
+    //    }
 
     auto partial_result = reduce_by_group<ResultType, ReduceOp>(
         exec.h_reduce_output, exec.d_reduce1, exec.d_reduce2, exec.d_reduce1,
         exec.h_sizes, exec.d_sizes, group_len, exec.stream, init_value);
-//
-//    VcudaFreeHost(tmp);
+    //
+    //    VcudaFreeHost(tmp);
 
     CUDA_CHECK_AFTER_CALL();
     for (size_t i = 0; i < non_empty_kernel_relative_indices.size(); i++) {
@@ -281,7 +285,8 @@ __device__ void VX3_VoxelyzeKernel::updateVoxelTemperature(Vindex local_id) {
             sin(2 * 3.1415926f * frequency * (time / temp_period + phase_offset));
 
         if (isnan(currentTemperature)) {
-            printf("UVT %f %f %f %f %f %f\n", temp_amplitude, amplitude, frequency, time, temp_period, phase_offset);
+            printf("UVT %f %f %f %f %f %f\n", temp_amplitude, amplitude, frequency, time,
+                   temp_period, phase_offset);
         }
         VX3_Voxel::updateTemperature(ctx, local_id, currentTemperature);
     }
@@ -363,9 +368,6 @@ __global__ void computeLinkFreq(VX3_VoxelyzeKernel *kernels, GroupSizesPrefixSum
         Vfloat stiffness = VX3_Link::axialStiffness(ctx, gt.tid);
         // axial
         Vfloat freq = stiffness / (mass_neg < mass_pos ? mass_neg : mass_pos);
-//        assert(not isnan(freq));
-//        if (isnan(freq))
-//            printf("%d %d %d %d\n", gt.gid, gt.tid, isnan(stiffness), isnan(L_G(gt.tid, current_transverse_area)));
         link_freq[tid] = freq;
     }
 }
@@ -401,35 +403,23 @@ vector<Vfloat> VX3_VoxelyzeKernelBatchExecutor::recommendedTimeStep(
     vector<Vfloat> max_freq(kernel_indices.size(), 0);
     runFunctionAndReduce<MaxReduce<Vfloat>>(computeLinkFreq, max_freq, VF(0), *this, true,
                                             kernel_indices);
-//
-//    cout << "links: " << endl;
-//    for (auto freq : max_freq)
-//        cout << freq << endl;
 
     // If link frequency is not available, use voxel frequency
-//    vector<size_t> invalid_kernel_indices;
-//    vector<size_t> invalid_kernel_relative_indices;
-//    for (size_t i = 0; i < kernel_indices.size(); i++) {
-//        if (max_freq[i] <= VF(0)) {
-//            invalid_kernel_indices.push_back(kernel_indices[i]);
-//            invalid_kernel_relative_indices.push_back(i);
-//        }
-//    }
-//
-//    vector<Vfloat> voxel_max_freq(invalid_kernel_indices.size(), 0);
-//    runFunctionAndReduce<MaxReduce<Vfloat>>(computeVoxelFreq, voxel_max_freq, VF(0), *this,
-//                                            false, invalid_kernel_indices);
+    vector<size_t> invalid_kernel_indices;
+    vector<size_t> invalid_kernel_relative_indices;
+    for (size_t i = 0; i < kernel_indices.size(); i++) {
+        if (max_freq[i] <= VF(0)) {
+            invalid_kernel_indices.push_back(kernel_indices[i]);
+            invalid_kernel_relative_indices.push_back(i);
+        }
+    }
 
-//    cout << "voxels: " << endl;
-//    for (auto freq : voxel_max_freq)
-//        cout << freq << endl;
+    vector<Vfloat> voxel_max_freq(invalid_kernel_indices.size(), 0);
+    runFunctionAndReduce<MaxReduce<Vfloat>>(computeVoxelFreq, voxel_max_freq, VF(0),
+                                            *this, false, invalid_kernel_indices);
 
-//    for (size_t i = 0; i < invalid_kernel_indices.size(); i++)
-//        max_freq[invalid_kernel_relative_indices[i]] = voxel_max_freq[i];
-
-//    cout << "final: " << endl;
-//    for (auto freq : max_freq)
-//        cout << freq << endl;
+    for (size_t i = 0; i < invalid_kernel_indices.size(); i++)
+        max_freq[invalid_kernel_relative_indices[i]] = voxel_max_freq[i];
 
     for (auto &freq : max_freq) {
         if (freq <= VF(0))
@@ -655,9 +645,8 @@ void VX3_VoxelyzeKernelBatchExecutor::init(
         auto recommended_time_steps = recommendedTimeStep(kernel_indices);
         for (size_t i = 0; i < kernel_indices.size(); i++) {
             if (recommended_time_steps[i] < 1e-10) {
-                throw std::runtime_error(
-                    format("Recommended_time_step of kernel {} is zero",
-                           kernel_indices[i]));
+                throw std::runtime_error(format(
+                    "Recommended_time_step of kernel {} is zero", kernel_indices[i]));
             }
             auto &k = *kernels[kernel_indices[i]];
             k.recommended_time_step = recommended_time_steps[i];
@@ -753,9 +742,8 @@ vector<bool> VX3_VoxelyzeKernelBatchExecutor::doTimeStep(
             auto recommended_time_steps = recommendedTimeStep(kernel_indices);
             for (size_t i = 0; i < kernel_indices.size(); i++) {
                 if (recommended_time_steps[i] < 1e-10) {
-                    throw std::runtime_error(
-                        format("Recommended_time_step of kernel {} is zero",
-                               kernel_indices[i]));
+                    throw std::runtime_error(format(
+                        "Recommended_time_step of kernel {} is zero", kernel_indices[i]));
                 }
                 auto &k = *kernels[kernel_indices[i]];
                 k.recommended_time_step = recommended_time_steps[i];

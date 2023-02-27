@@ -56,10 +56,19 @@ void VX3_Config::parseSettings() {
     palette.read(config_tree.get_child("VXA.VXC.Palette"));
     structure.read(config_tree.get_child("VXA.VXC.Structure"));
 
+    // Validate structure
+    for (auto d : structure.data) {
+        if (d < 0 || d >= palette.materials.size()) {
+            throw std::runtime_error(
+                fmt::format("Material {} referenced in structure data doesn't exist", d));
+        }
+    }
+
     if (not structure.has_phase_offsets) {
-        for (size_t i = 0; i < structure.phase_offsets.size(); i++)
+        for (size_t i = 0; i < structure.phase_offsets.size(); i++) {
             structure.phase_offsets[i] =
                 palette.materials[structure.data[i]].material_temp_phase;
+        }
     }
 
     // VXA.RawPrint
@@ -269,10 +278,21 @@ void VX3_LatticeConfig::read(const boost::property_tree::ptree &lattice_tree) {
 
 void VX3_PaletteConfig::read(const boost::property_tree::ptree &palette_tree) {
     // root of tree: VXC.Palette
+    auto default_material = VX3_PaletteMaterialConfig();
+    default_material.material_id = 0;
+    materials.emplace_back(default_material);
+    int material_id = 1;
     for (auto &child : palette_tree.get_child("")) {
         auto material = VX3_PaletteMaterialConfig();
+        auto id = child.second.get<string>("<xmlattr>.ID", "");
+        if (not id.empty()) {
+            if (stoi(id) != material_id)
+                throw std::runtime_error("ID is not consecutive");
+        }
         material.read(child.second);
+        material.material_id = material_id;
         materials.emplace_back(material);
+        material_id++;
     }
 }
 

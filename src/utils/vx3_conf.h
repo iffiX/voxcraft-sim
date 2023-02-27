@@ -2,7 +2,7 @@
 #define VX3_CONF_H
 // #define DEBUG_SOA  true
 // #define DEBUG_SIMULATION_MANAGER true
-#define DEBUG_VOXEL_AND_LINK_VALUES true
+// #define DEBUG_VOXEL_AND_LINK_VALUES true
 
 #define VX3_VOXELYZE_KERNEL_ALLOCATE_FRAME_NUM      500
 
