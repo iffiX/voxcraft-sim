@@ -3,6 +3,7 @@
 //
 
 #include "vx3/vx3.hpp"
+#include <fmt/format.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
@@ -66,31 +67,52 @@ int main(int argc, char **argv) {
     }
 
     // Currently, just use GPU 0
-    for (auto &file : fs::directory_iterator(input)) {
-        auto base_config_path = (input / "base.vxa").string();
-        if (boost::algorithm::to_lower_copy(file.path().extension().string()) == ".vxd") {
-            ifstream base_file(base_config_path);
-            ifstream robot_file(file.path().string());
-            stringstream base_buffer, robot_buffer;
-            base_buffer << base_file.rdbuf();
-            robot_buffer << robot_file.rdbuf();
-            auto base = base_buffer.str();
-            auto robot = robot_buffer.str();
+//    for (auto &file : fs::directory_iterator(input)) {
+//        auto base_config_path = (input / "base.vxa").string();
+//        if (boost::algorithm::to_lower_copy(file.path().extension().string()) == ".vxd") {
+//            ifstream base_file(base_config_path);
+//            ifstream robot_file(file.path().string());
+//            stringstream base_buffer, robot_buffer;
+//            base_buffer << base_file.rdbuf();
+//            robot_buffer << robot_file.rdbuf();
+//            auto base = base_buffer.str();
+//            auto robot = robot_buffer.str();
+//
+//            vector<string> bases, robots;
+//            for (size_t i = 0; i < 256; i++) {
+//                bases.push_back(base);
+//                robots.push_back(robot);
+//            }
+//            Voxcraft vx({}, 128);
+//            auto result = vx.runSims(bases, robots);
+//
+//            ofstream result_file((output / "sim.result").string());
+//            ofstream record_file((output / "sim.history").string());
+//            if (not result_file.is_open() or not record_file.is_open())
+//                throw std::invalid_argument("Cannot open output path");
+//            result_file << get<0>(result)[0];
+//            record_file << get<1>(result)[0];
+//        }
+//    }
 
-            vector<string> bases, robots;
-            for (size_t i = 0; i < 256; i++) {
-                bases.push_back(base);
-                robots.push_back(robot);
-            }
-            Voxcraft vx({}, 128);
-            auto result = vx.runSims(bases, robots);
+    auto base_config_path = (input / "base.vxa").string();
+    ifstream base_file(base_config_path);
+    stringstream base_buffer;
+    base_buffer << base_file.rdbuf();
+    auto base = base_buffer.str();
 
-            ofstream result_file((output / "sim.result").string());
-            ofstream record_file((output / "sim.history").string());
-            if (not result_file.is_open() or not record_file.is_open())
-                throw std::invalid_argument("Cannot open output path");
-            result_file << get<0>(result)[0];
-            record_file << get<1>(result)[0];
-        }
+    vector<string> bases, robots;
+
+    for (size_t i = 0; i < 128; i++) {
+        auto robot_config_path = (input / fmt::format("{}.vxd", i)).string();
+        ifstream robot_file(robot_config_path);
+        stringstream robot_buffer;
+        robot_buffer << robot_file.rdbuf();
+        auto robot = robot_buffer.str();
+        bases.push_back(base);
+        robots.push_back(robot);
     }
+
+    Voxcraft vx({}, 128);
+    auto result = vx.runSims(bases, robots);
 }

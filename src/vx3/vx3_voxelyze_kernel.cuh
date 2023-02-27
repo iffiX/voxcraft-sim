@@ -19,9 +19,9 @@ struct __align__(8) VX3_VoxelyzeKernel {
     void adjustRecordFrameStorage(size_t required_size, cudaStream_t stream);
 
     // update sub-routines used by doTimeStep
-    __device__ void updateLinks(Vindex tid);
-    __device__ void updateVoxels(Vindex tid);
-    __device__ void updateVoxelTemperature(Vindex tid);
+    __device__ void updateLinks(Vindex local_id);
+    __device__ void updateVoxels(Vindex local_id);
+    __device__ void updateVoxelTemperature(Vindex local_id);
     __device__ void saveRecordFrame(Vindex tid);
 
     /* data */
@@ -141,7 +141,7 @@ struct VX3_VoxelyzeKernelBatchExecutor {
     computeTargetCloseness(const std::vector<size_t> &kernel_indices) const;
     void updateMetrics(const std::vector<size_t> &kernel_indices) const;
 
-    void syncKernels();
+    void copyKernelsAsync();
 
     cudaStream_t stream;
 

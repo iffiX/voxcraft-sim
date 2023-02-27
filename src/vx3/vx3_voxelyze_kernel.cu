@@ -2,9 +2,11 @@
 #include "utils/vx3_reduce.cuh"
 #include "vx3/vx3_simulation_record.h"
 #include "vx3_voxelyze_kernel.cuh"
+#include <fmt/format.h>
 #include <iostream>
 
 using namespace std;
+using namespace fmt;
 
 struct GroupSizesPrefixSum {
     Vsize sums[VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE] = {0};
@@ -47,36 +49,46 @@ void runFunction(FuncType func, const VX3_VoxelyzeKernelBatchExecutor &exec, boo
     vector<Vsize> group_len;
     GroupSizesPrefixSum p_sum;
     GroupToKernelIndex k_index;
-    vector<Vsize> kernel_ids;
-    Vsize id = 0;
+    vector<Vsize> non_empty_kernel_relative_indices;
+    Vsize relative_idx = 0;
     for (auto idx : kernel_indices) {
-        if (is_link and exec.kernels[idx]->ctx.links.size() > 0) {
-            size_t size = kernel_ids.size();
-            p_sum.sums[size] = exec.kernels[idx]->ctx.links.size();
-            group_len.push_back(exec.kernels[idx]->ctx.links.size());
+        size_t link_num = exec.kernels[idx]->ctx.links.size();
+        size_t voxel_num = exec.kernels[idx]->ctx.voxels.size();
+        if (is_link and link_num > 0) {
+            size_t size = non_empty_kernel_relative_indices.size();
+            p_sum.sums[size] = link_num;
+            group_len.push_back(link_num);
             k_index.index[size] = idx;
-            kernel_ids.push_back(id);
-        } else if (not is_link and exec.kernels[idx]->ctx.voxels.size() > 0) {
-            size_t size = kernel_ids.size();
-            p_sum.sums[size] = exec.kernels[idx]->ctx.voxels.size();
-            group_len.push_back(exec.kernels[idx]->ctx.voxels.size());
+            non_empty_kernel_relative_indices.push_back(relative_idx);
+        } else if (not is_link and voxel_num > 0) {
+            size_t size = non_empty_kernel_relative_indices.size();
+            p_sum.sums[size] = voxel_num;
+            group_len.push_back(voxel_num);
             k_index.index[size] = idx;
-            kernel_ids.push_back(id);
+            non_empty_kernel_relative_indices.push_back(relative_idx);
         }
-        id++;
+        relative_idx++;
     }
-    Vsize group_num = kernel_ids.size();
+    Vsize group_num = non_empty_kernel_relative_indices.size();
+
     computePrefixSum(p_sum, group_num);
+    Vsize total_threads = p_sum.sums[non_empty_kernel_relative_indices.size() - 1];
+
     pair<int, int> size;
     if (block_size > 0) {
-        size.first = CEIL(p_sum.sums[kernel_ids.size() - 1], block_size);
+        size.first = CEIL(total_threads, block_size);
         size.second = block_size;
     } else
-        size = getGridAndBlockSize(func, p_sum.sums[kernel_ids.size() - 1]);
+        size = getGridAndBlockSize(func, total_threads);
     func<<<size.first, size.second, 0, exec.stream>>>(
         exec.d_kernels, p_sum, k_index, group_num, std::forward<Args>(args)...);
     CUDA_CHECK_AFTER_CALL();
 }
+
+/**
+ * Note: runFunctionAndReduce implicitly synchronizes stream before returning results
+ * due to the call to reduce_by_group
+ */
 template <typename ReduceOp, typename FuncType, typename ResultType>
 void runFunctionAndReduce(FuncType func, vector<ResultType> &result,
                           ResultType init_value,
@@ -84,51 +96,69 @@ void runFunctionAndReduce(FuncType func, vector<ResultType> &result,
                           const vector<size_t> &kernel_indices) {
     if (kernel_indices.empty())
         return;
+
+    if (result.size() != kernel_indices.size())
+        throw std::invalid_argument("Result vector size must be the same as kernel indices size.");
+
     vector<Vsize> group_len;
     GroupSizesPrefixSum p_sum;
     GroupToKernelIndex k_index;
-    vector<Vsize> kernel_ids;
-    Vsize id = 0;
+    vector<Vsize> non_empty_kernel_relative_indices;
+    Vsize relative_idx = 0;
     for (auto idx : kernel_indices) {
-        if (is_link and exec.kernels[idx]->ctx.links.size() > 0) {
-            size_t size = kernel_ids.size();
-            p_sum.sums[size] = exec.kernels[idx]->ctx.links.size();
-            group_len.push_back(exec.kernels[idx]->ctx.links.size());
+        size_t link_num = exec.kernels[idx]->ctx.links.size();
+        size_t voxel_num = exec.kernels[idx]->ctx.voxels.size();
+        if (is_link and link_num > 0) {
+            size_t size = non_empty_kernel_relative_indices.size();
+            p_sum.sums[size] = link_num;
+            group_len.push_back(link_num);
             k_index.index[size] = idx;
-            kernel_ids.push_back(id);
-        } else if (not is_link and exec.kernels[idx]->ctx.voxels.size() > 0) {
-            size_t size = kernel_ids.size();
-            p_sum.sums[size] = exec.kernels[idx]->ctx.voxels.size();
-            group_len.push_back(exec.kernels[idx]->ctx.voxels.size());
+            non_empty_kernel_relative_indices.push_back(relative_idx);
+        } else if (not is_link and voxel_num > 0) {
+            size_t size = non_empty_kernel_relative_indices.size();
+            p_sum.sums[size] = voxel_num;
+            group_len.push_back(voxel_num);
             k_index.index[size] = idx;
-            kernel_ids.push_back(id);
+            non_empty_kernel_relative_indices.push_back(relative_idx);
         }
-        id++;
+        relative_idx++;
     }
-    Vsize group_num = kernel_ids.size();
+    Vsize group_num = non_empty_kernel_relative_indices.size();
+
     computePrefixSum(p_sum, group_num);
-    auto size = getGridAndBlockSize(func, p_sum.sums[kernel_ids.size() - 1]);
+    Vsize total_threads = p_sum.sums[non_empty_kernel_relative_indices.size() - 1];
+
+    auto size = getGridAndBlockSize(func, total_threads);
     func<<<size.first, size.second, 0, exec.stream>>>(
         exec.d_kernels, p_sum, k_index, group_num, (ResultType *)exec.d_reduce1);
     CUDA_CHECK_AFTER_CALL();
 
 //    VcudaStreamSynchronize(exec.stream);
 //    ResultType *tmp;
-//    VcudaMallocHost(&tmp, sizeof(ResultType) * p_sum.sums[kernel_ids.size() - 1]);
+//    VcudaMallocHost(&tmp, sizeof(ResultType) * p_sum.sums[non_empty_kernel_relative_indices.size() - 1]);
 //    VcudaMemcpyAsync(tmp, exec.d_reduce1,
-//                     sizeof(ResultType) * p_sum.sums[kernel_ids.size() - 1],
+//                     sizeof(ResultType) * p_sum.sums[non_empty_kernel_relative_indices.size() - 1],
 //                     cudaMemcpyDeviceToHost, exec.stream);
 //    VcudaStreamSynchronize(exec.stream);
+//    size_t offset = 0;
+//    for (size_t k = 0; k < non_empty_kernel_relative_indices.size(); k++) {
+//        std::cout << "Kernel " << k << ": ";
+//        for(size_t i = offset; i < p_sum.sums[k]; i++) {
+//            std::cout << ((float*)tmp)[i] << " ";
+//        }
+//        std::cout << std::endl;
+//        offset = p_sum.sums[k];
+//    }
 
     auto partial_result = reduce_by_group<ResultType, ReduceOp>(
         exec.h_reduce_output, exec.d_reduce1, exec.d_reduce2, exec.d_reduce1,
         exec.h_sizes, exec.d_sizes, group_len, exec.stream, init_value);
-
-    //    VcudaFreeHost(tmp);
+//
+//    VcudaFreeHost(tmp);
 
     CUDA_CHECK_AFTER_CALL();
-    for (size_t i = 0; i < kernel_ids.size(); i++) {
-        result[kernel_ids[i]] = partial_result[i];
+    for (size_t i = 0; i < non_empty_kernel_relative_indices.size(); i++) {
+        result[non_empty_kernel_relative_indices[i]] = partial_result[i];
     }
 }
 
@@ -209,77 +239,80 @@ void VX3_VoxelyzeKernel::adjustRecordFrameStorage(size_t required_size,
 /*****************************************************************************
  * VX3_VoxelyzeKernel device sub-routines
  *****************************************************************************/
-__device__ void VX3_VoxelyzeKernel::updateLinks(Vindex tid) {
-    if (tid < ctx.links.size()) {
-        Vindex voxel_neg = L_G(tid, voxel_neg);
-        Vindex voxel_pos = L_G(tid, voxel_pos);
+__device__ void VX3_VoxelyzeKernel::updateLinks(Vindex local_id) {
+    if (local_id < ctx.links.size()) {
+        Vindex voxel_neg = L_G(local_id, voxel_neg);
+        Vindex voxel_pos = L_G(local_id, voxel_pos);
         Vindex voxel_neg_mat = V_G(voxel_neg, voxel_material);
         Vindex voxel_pos_mat = V_G(voxel_pos, voxel_material);
 
-        if (L_G(tid, removed))
+        if (L_G(local_id, removed))
             return;
         if (VM_G(voxel_neg_mat, fixed) && VM_G(voxel_pos_mat, fixed))
             return;
-        if (L_G(tid, is_detached))
+        if (L_G(local_id, is_detached))
             return;
-        VX3_Link::timeStep(ctx, tid);
+        VX3_Link::timeStep(ctx, local_id);
     }
 }
 
-__device__ void VX3_VoxelyzeKernel::updateVoxels(Vindex tid) {
-    if (tid < ctx.voxels.size()) {
-        Vindex material = V_G(tid, voxel_material);
+__device__ void VX3_VoxelyzeKernel::updateVoxels(Vindex local_id) {
+    if (local_id < ctx.voxels.size()) {
+        Vindex material = V_G(local_id, voxel_material);
         if (VM_G(material, fixed))
             return; // fixed voxels, no need to update position
-        VX3_Voxel::timeStep(*this, tid, dt, time);
+        VX3_Voxel::timeStep(*this, local_id, dt, time);
     }
 }
 
-__device__ void VX3_VoxelyzeKernel::updateVoxelTemperature(Vindex tid) {
+__device__ void VX3_VoxelyzeKernel::updateVoxelTemperature(Vindex local_id) {
     // updates the temperatures For Actuation!
-    if (enable_vary_temp and temp_period > 0 and tid < ctx.voxels.size()) {
-        Vindex material = V_G(tid, voxel_material);
+    if (enable_vary_temp and temp_period > 0 and local_id < ctx.voxels.size()) {
+        Vindex material = V_G(local_id, voxel_material);
         if (VM_G(material, fixed))
             return; // fixed voxels, no need to update temperature
 
-        Vfloat amplitude = V_G(tid, amplitude);
-        Vfloat frequency = V_G(tid, frequency);
-        Vfloat phase_offset = V_G(tid, phase_offset);
+        Vfloat amplitude = V_G(local_id, amplitude);
+        Vfloat frequency = V_G(local_id, frequency);
+        Vfloat phase_offset = V_G(local_id, phase_offset);
 
         Vfloat currentTemperature =
             temp_amplitude * amplitude *
             sin(2 * 3.1415926f * frequency * (time / temp_period + phase_offset));
 
-        VX3_Voxel::updateTemperature(ctx, tid, currentTemperature);
+        if (isnan(currentTemperature)) {
+            printf("UVT %f %f %f %f %f %f\n", temp_amplitude, amplitude, frequency, time, temp_period, phase_offset);
+        }
+        VX3_Voxel::updateTemperature(ctx, local_id, currentTemperature);
     }
 }
 
-__device__ void VX3_VoxelyzeKernel::saveRecordFrame(Vindex tid) {
+__device__ void VX3_VoxelyzeKernel::saveRecordFrame(Vindex local_id) {
     unsigned int frame = frame_num;
     Vfloat scale = 1 / rescale;
 
-    if (tid == 0) {
+    if (local_id == 0) {
         d_steps[frame] = step;
         d_time_points[frame] = time;
     }
 
-    if (tid < ctx.voxels.size() and record_voxel) {
+    if (local_id < ctx.voxels.size() and record_voxel) {
         size_t offset = ctx.voxels.size() * frame;
         VX3_SimulationVoxelRecord v;
-        v.valid = VX3_Voxel::isSurface(ctx, tid);
+        v.valid = VX3_Voxel::isSurface(ctx, local_id);
         if (v.valid) {
-            v.material = V_G(tid, voxel_material);
-            v.local_signal = V_G(tid, local_signal);
-            auto position = V_G(tid, position);
+            v.material = V_G(local_id, voxel_material);
+            v.local_signal = V_G(local_id, local_signal);
+            auto position = V_G(local_id, position);
             v.x = position.x * scale;
             v.y = position.y * scale;
             v.z = position.z * scale;
-            auto orientation = V_G(tid, orientation);
+            auto orientation = V_G(local_id, orientation);
             v.orient_angle = orientation.angleDegrees();
             v.orient_x = orientation.x;
             v.orient_y = orientation.y;
             v.orient_z = orientation.z;
-            Vec3f ppp = V_G(tid, ppp_offset), nnn = V_G(tid, nnn_offset);
+            Vec3f ppp = V_G(local_id, ppp_offset), nnn = V_G(local_id, nnn_offset);
             v.nnn_x = nnn.x * scale;
             v.nnn_y = nnn.y * scale;
             v.nnn_z = nnn.z * scale;
@@ -287,15 +320,15 @@ __device__ void VX3_VoxelyzeKernel::saveRecordFrame(Vindex tid) {
             v.ppp_y = ppp.y * scale;
             v.ppp_z = ppp.z * scale;
         }
-        d_voxel_record[offset + tid] = v;
+        d_voxel_record[offset + local_id] = v;
     }
-    if (tid < ctx.links.size() and record_link) {
+    if (local_id < ctx.links.size() and record_link) {
         size_t offset = ctx.links.size() * frame;
         VX3_SimulationLinkRecord l;
-        l.valid = not L_G(tid, is_detached);
+        l.valid = not L_G(local_id, is_detached);
         if (l.valid) {
-            auto pos_voxel_position = V_G(L_G(tid, voxel_pos), position);
-            auto neg_voxel_position = V_G(L_G(tid, voxel_neg), position);
+            auto pos_voxel_position = V_G(L_G(local_id, voxel_pos), position);
+            auto neg_voxel_position = V_G(L_G(local_id, voxel_neg), position);
             l.pos_x = pos_voxel_position.x;
             l.pos_y = pos_voxel_position.y;
             l.pos_z = pos_voxel_position.z;
@@ -303,7 +336,7 @@ __device__ void VX3_VoxelyzeKernel::saveRecordFrame(Vindex tid) {
             l.neg_y = neg_voxel_position.y;
             l.neg_z = neg_voxel_position.z;
         }
-        d_link_record[offset + tid] = l;
+        d_link_record[offset + local_id] = l;
     }
 }
 
@@ -329,7 +362,11 @@ __global__ void computeLinkFreq(VX3_VoxelyzeKernel *kernels, GroupSizesPrefixSum
         Vfloat mass_pos = VM_G(voxel_pos_mat, mass);
         Vfloat stiffness = VX3_Link::axialStiffness(ctx, gt.tid);
         // axial
-        link_freq[tid] = stiffness / (mass_neg < mass_pos ? mass_neg : mass_pos);
+        Vfloat freq = stiffness / (mass_neg < mass_pos ? mass_neg : mass_pos);
+//        assert(not isnan(freq));
+//        if (isnan(freq))
+//            printf("%d %d %d %d\n", gt.gid, gt.tid, isnan(stiffness), isnan(L_G(gt.tid, current_transverse_area)));
+        link_freq[tid] = freq;
     }
 }
 
@@ -348,7 +385,9 @@ __global__ void computeVoxelFreq(VX3_VoxelyzeKernel *kernels, GroupSizesPrefixSu
         Vfloat youngs_modulus = VM_G(mat, E);
         Vfloat nom_size = VM_G(mat, nom_size);
         Vfloat mass = VM_G(mat, mass);
-        voxel_freq[tid] = youngs_modulus * nom_size / mass;
+        Vfloat freq = youngs_modulus * nom_size / mass;
+        assert(not isnan(freq));
+        voxel_freq[tid] = freq;
     }
 }
 
@@ -360,18 +399,37 @@ vector<Vfloat> VX3_VoxelyzeKernelBatchExecutor::recommendedTimeStep(
 
     // maximum frequency in the simulation in rad/sec
     vector<Vfloat> max_freq(kernel_indices.size(), 0);
-    runFunctionAndReduce<maxReduce<Vfloat>>(computeLinkFreq, max_freq, VF(0), *this, true,
+    runFunctionAndReduce<MaxReduce<Vfloat>>(computeLinkFreq, max_freq, VF(0), *this, true,
                                             kernel_indices);
+//
+//    cout << "links: " << endl;
+//    for (auto freq : max_freq)
+//        cout << freq << endl;
 
     // If link frequency is not available, use voxel frequency
-    vector<size_t> invalid_kernel_indices;
-    for (size_t i = 0; i < kernel_indices.size(); i++) {
-        if (max_freq[i] <= VF(0)) {
-            invalid_kernel_indices.push_back(kernel_indices[i]);
-        }
-    }
-    runFunctionAndReduce<maxReduce<Vfloat>>(computeVoxelFreq, max_freq, VF(0), *this,
-                                            false, invalid_kernel_indices);
+//    vector<size_t> invalid_kernel_indices;
+//    vector<size_t> invalid_kernel_relative_indices;
+//    for (size_t i = 0; i < kernel_indices.size(); i++) {
+//        if (max_freq[i] <= VF(0)) {
+//            invalid_kernel_indices.push_back(kernel_indices[i]);
+//            invalid_kernel_relative_indices.push_back(i);
+//        }
+//    }
+//
+//    vector<Vfloat> voxel_max_freq(invalid_kernel_indices.size(), 0);
+//    runFunctionAndReduce<MaxReduce<Vfloat>>(computeVoxelFreq, voxel_max_freq, VF(0), *this,
+//                                            false, invalid_kernel_indices);
+
+//    cout << "voxels: " << endl;
+//    for (auto freq : voxel_max_freq)
+//        cout << freq << endl;
+
+//    for (size_t i = 0; i < invalid_kernel_indices.size(); i++)
+//        max_freq[invalid_kernel_relative_indices[i]] = voxel_max_freq[i];
+
+//    cout << "final: " << endl;
+//    for (auto freq : max_freq)
+//        cout << freq << endl;
 
     for (auto &freq : max_freq) {
         if (freq <= VF(0))
@@ -407,7 +465,7 @@ vector<bool> VX3_VoxelyzeKernelBatchExecutor::isAnyLinkDiverged(
     const std::vector<size_t> &kernel_indices) const {
     vector<bool> result(kernel_indices.size(), false);
 
-    runFunctionAndReduce<orReduce<bool>>(checkLinkDivergence, result, false, *this, true,
+    runFunctionAndReduce<OrReduce<bool>>(checkLinkDivergence, result, false, *this, true,
                                          kernel_indices);
     return std::move(result);
 }
@@ -461,7 +519,7 @@ vector<Vec3f> VX3_VoxelyzeKernelBatchExecutor::computeCurrentCenterOfMass(
     const vector<size_t> &kernel_indices) const {
     vector<Vec3f> result(kernel_indices.size(), Vec3f(0, 0, 0));
     vector<MassDotPos> reduce_result(kernel_indices.size(), MassDotPos(0, 0, 0, 0));
-    runFunctionAndReduce<sumReduce<MassDotPos>>(computeMassDotPosition, reduce_result,
+    runFunctionAndReduce<SumReduce<MassDotPos>>(computeMassDotPosition, reduce_result,
                                                 MassDotPos(0, 0, 0, 0), *this, false,
                                                 kernel_indices);
     for (size_t i = 0; i < reduce_result.size(); i++) {
@@ -535,7 +593,7 @@ vector<pair<int, Vfloat>> VX3_VoxelyzeKernelBatchExecutor::computeTargetClosenes
     vector<TargetCloseness> reduce_result(needs_compute_kernel_indices.size(),
                                           TargetCloseness(0, 0));
 
-    runFunctionAndReduce<sumReduce<TargetCloseness>>(
+    runFunctionAndReduce<SumReduce<TargetCloseness>>(
         computeTargetDistances, reduce_result, TargetCloseness(0, 0), *this, false,
         needs_compute_kernel_indices);
 
@@ -582,7 +640,11 @@ void VX3_VoxelyzeKernelBatchExecutor::init(
 
     // To compute recommended time step, we need to synchronize
     // the initial version of the kernel
-    syncKernels();
+    copyKernelsAsync();
+
+    // Make sure all allocation and copy actions are completed
+    // before calling recommendedTimeStep
+    VcudaStreamSynchronize(stream);
 
     vector<size_t> kernel_indices;
     for (size_t i = 0; i < kernels.size(); i++)
@@ -593,9 +655,9 @@ void VX3_VoxelyzeKernelBatchExecutor::init(
         auto recommended_time_steps = recommendedTimeStep(kernel_indices);
         for (size_t i = 0; i < kernel_indices.size(); i++) {
             if (recommended_time_steps[i] < 1e-10) {
-                cout << "Warning: recommended_time_step of kernel " << kernel_indices[i]
-                     << " is zero." << endl;
-                recommended_time_steps[i] = 1e-10;
+                throw std::runtime_error(
+                    format("Recommended_time_step of kernel {} is zero",
+                           kernel_indices[i]));
             }
             auto &k = *kernels[kernel_indices[i]];
             k.recommended_time_step = recommended_time_steps[i];
@@ -615,7 +677,10 @@ void VX3_VoxelyzeKernelBatchExecutor::init(
         }
     }
 
-    syncKernels();
+    copyKernelsAsync();
+    // Make sure all copy actions are completed
+    // before calling doTimeStep
+    VcudaStreamSynchronize(stream);
 }
 
 /*****************************************************************************
@@ -688,9 +753,9 @@ vector<bool> VX3_VoxelyzeKernelBatchExecutor::doTimeStep(
             auto recommended_time_steps = recommendedTimeStep(kernel_indices);
             for (size_t i = 0; i < kernel_indices.size(); i++) {
                 if (recommended_time_steps[i] < 1e-10) {
-                    cout << "Warning: recommended_time_step of kernel "
-                         << kernel_indices[i] << " is zero." << endl;
-                    recommended_time_steps[i] = 1e-10;
+                    throw std::runtime_error(
+                        format("Recommended_time_step of kernel {} is zero",
+                               kernel_indices[i]));
                 }
                 auto &k = *kernels[kernel_indices[i]];
                 k.recommended_time_step = recommended_time_steps[i];
@@ -722,7 +787,7 @@ vector<bool> VX3_VoxelyzeKernelBatchExecutor::doTimeStep(
     }
 
     // Synchronize host and device side kernel settings
-    syncKernels();
+    copyKernelsAsync();
 
     // Wait for transmission to complete, if not, host may run too fast
     // and change "step", "time" etc. before transmission is finished.
@@ -735,6 +800,7 @@ vector<bool> VX3_VoxelyzeKernelBatchExecutor::doTimeStep(
                 do_time_step_indices);
     runFunction(update_voxels, *this, false, VX3_VOXELYZE_KERNEL_UPDATE_VOXEL_BLOCK_SIZE,
                 do_time_step_indices, save_frame);
+
     // Update metrics
     vector<size_t> update_metrics_indices;
     for (auto idx : do_time_step_indices) {
@@ -803,7 +869,7 @@ void VX3_VoxelyzeKernelBatchExecutor::updateMetrics(
     }
 }
 
-void VX3_VoxelyzeKernelBatchExecutor::syncKernels() {
+void VX3_VoxelyzeKernelBatchExecutor::copyKernelsAsync() {
     // Synchronize host and device side kernel settings
     for (size_t i = 0; i < kernels.size(); i++) {
         memcpy(h_kernels + i, kernels[i], sizeof(VX3_VoxelyzeKernel));

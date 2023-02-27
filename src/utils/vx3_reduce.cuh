@@ -115,6 +115,7 @@ Vsize getReduceByGroupBufferSize(Vsize elem_size, std::vector<Vsize> group_elem_
  * Note: since required reduce buffer size is always smaller than the input size,
  *  you can use 2 same size reduce buffers the same size as the input (or just set
  * d_reduce_buffer2 = d_in)
+ * Note: reduce implicitly synchronizes stream before returning results
  */
 template <typename T, typename ReduceOp>
 T reduce(void *host_buffer, const void *d_in, void *d_reduce_buffer1,
@@ -204,6 +205,7 @@ _reduce_by_group(void *host_buffer, const void *d_in, void *d_reduce_buffer1,
  * @param stream
  * @param init_value
  * Note: To just use 2 reduce buffers, set d_reduce_buffer2 = d_in)
+ * Note: reduce_by_group implicitly synchronizes stream before returning results
  */
 template <typename T, typename ReduceOp>
 std::vector<T> reduce_by_group(void *host_buffer, const void *d_in,
@@ -263,15 +265,15 @@ std::vector<T> reduce_by_group(void *host_buffer, const void *d_in,
         d_sizes_buffer, d_in_group_len.size(), 0, level_num, stream, init_value));
 }
 
-template <typename T> struct maxReduce {
+template <typename T> struct MaxReduce {
     __device__ T operator()(const T &a, const T &b) { return MAX(a, b); }
 };
 
-template <typename T> struct sumReduce {
+template <typename T> struct SumReduce {
     __device__ T operator()(const T &a, const T &b) { return a + b; }
 };
 
-template <typename T> struct orReduce {
+template <typename T> struct OrReduce {
     __device__ T operator()(const T &a, const T &b) { return a || b; }
 };
 

@@ -1,6 +1,7 @@
 #ifndef VX3_CUDA_H
 #define VX3_CUDA_H
 
+#include "utils/vx3_def.h"
 #include <chrono>
 #include <ctime>
 #include <cuda.h>
@@ -31,6 +32,12 @@ __host__ inline void CUDA_ERROR_CHECK_OUTPUT(cudaError_t code, const char *file,
 #define CUDA_ERROR_CHECK(ans)                                                            \
     { CUDA_ERROR_CHECK_OUTPUT((ans), __FILE__, __LINE__); }
 #endif
+
+#define CUDA_PRINTF_ASSERT(assert)                                                       \
+    if (not(assert)) {                                                                   \
+        printf("Assertion " #assert " failed: @file " __FILE__                             \
+               " @line " TOSTRING(__LINE__) "\n");                                       \
+    }
 
 // Verbose calls to cuda runtime with error checking
 #define VcudaMemGetInfo(free, total)                                                     \
@@ -68,5 +75,5 @@ __host__ inline void CUDA_ERROR_CHECK_OUTPUT(cudaError_t code, const char *file,
     { CUDA_ERROR_CHECK(cudaGetLastError()); }
 
 #define CUDA_MAX_BLOCK_SIZE 1024
-#define CUDA_MAX_WARP_SIZE  32
+#define CUDA_MAX_WARP_SIZE 32
 #endif // VX3_CUDA_H

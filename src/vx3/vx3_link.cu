@@ -128,6 +128,9 @@ __device__ void VX3_Link::updateRestLength(VX3_Context &ctx, Vindex link) {
     auto neg_base_size = VX3_Voxel::baseSize(ctx, L_G(voxel_neg), L_G(axis));
     auto pos_base_size = VX3_Voxel::baseSize(ctx, L_G(voxel_neg), L_G(axis));
     L_S(current_rest_length, VF(0.5) * (neg_base_size + pos_base_size));
+#ifdef DEBUG_VOXEL_AND_LINK_VALUES
+    CUDA_PRINTF_ASSERT(not isnan(L_G(current_rest_length)));
+#endif
 }
 
 __device__ Quat3f VX3_Link::orientLink(VX3_Context &ctx, Vindex link) {
@@ -229,6 +232,11 @@ __device__ void VX3_Link::updateForces(VX3_Context &ctx, Vindex link) {
     Vfloat _axial_stress =
         updateStrain(ctx, link, new_pos2.x / L_G(current_rest_length) - VF(1.0));
     L_S(axial_stress, _axial_stress);
+
+#ifdef DEBUG_VOXEL_AND_LINK_VALUES
+    CUDA_PRINTF_ASSERT(not isnan(L_G(axial_stress)));
+#endif
+
     if (isFailed(ctx, link)) {
         L_S(force_neg, Vec3f());
         L_S(force_pos, Vec3f());
@@ -321,6 +329,21 @@ __device__ void VX3_Link::updateForces(VX3_Context &ctx, Vindex link) {
     //        L_S(moment_pos, L_G(moment_pos) * 0.01);
     //        L_S(is_new_link, L_G(is_new_link) - 1);
     //    }
+
+#ifdef DEBUG_VOXEL_AND_LINK_VALUES
+    CUDA_PRINTF_ASSERT(not isnan(L_G(force_neg).x));
+    CUDA_PRINTF_ASSERT(not isnan(L_G(force_neg).y));
+    CUDA_PRINTF_ASSERT(not isnan(L_G(force_neg).z));
+    CUDA_PRINTF_ASSERT(not isnan(L_G(force_pos).x));
+    CUDA_PRINTF_ASSERT(not isnan(L_G(force_pos).y));
+    CUDA_PRINTF_ASSERT(not isnan(L_G(force_pos).z));
+    CUDA_PRINTF_ASSERT(not isnan(L_G(moment_neg).x));
+    CUDA_PRINTF_ASSERT(not isnan(L_G(moment_neg).y));
+    CUDA_PRINTF_ASSERT(not isnan(L_G(moment_neg).z));
+    CUDA_PRINTF_ASSERT(not isnan(L_G(moment_pos).x));
+    CUDA_PRINTF_ASSERT(not isnan(L_G(moment_pos).y));
+    CUDA_PRINTF_ASSERT(not isnan(L_G(moment_pos).z));
+#endif
 }
 
 __device__ void VX3_Link::updateTransverseInfo(VX3_Context &ctx, Vindex link) {
@@ -332,6 +355,10 @@ __device__ void VX3_Link::updateTransverseInfo(VX3_Context &ctx, Vindex link) {
     L_S(current_transverse_strain_sum,
         VF(0.5) * (VX3_Voxel::transverseStrainSum(ctx, voxel_neg, L_G(axis)) +
                    VX3_Voxel::transverseStrainSum(ctx, voxel_pos, L_G(axis))));
+#ifdef DEBUG_VOXEL_AND_LINK_VALUES
+    CUDA_PRINTF_ASSERT(not isnan(L_G(current_transverse_area)));
+    CUDA_PRINTF_ASSERT(not isnan(L_G(current_transverse_strain_sum)));
+#endif
 }
 
 __device__ Vfloat VX3_Link::updateStrain(VX3_Context &ctx, Vindex link,

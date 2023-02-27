@@ -13,7 +13,7 @@ using namespace fmt;
 using namespace boost;
 
 void VX3_SimulationManager::addSim(const VX3_Config &config) {
-#ifdef DEBUG_SIMULATION
+#ifdef DEBUG_SIMULATION_MANAGER
     print("(Device {}, Batch {}) begin adding sim {}\n", device, batch, sims.size());
 #endif
     sims.emplace_back();
@@ -22,7 +22,7 @@ void VX3_SimulationManager::addSim(const VX3_Config &config) {
     // rescale the whole space. so history file can contain less digits.
     // ( e.g. not 0.000221, but 2.21 )
     sim.record.rescale = VX3_RECORD_RESCALE;
-#ifdef DEBUG_SIMULATION
+#ifdef DEBUG_SIMULATION_MANAGER
     print("(Device {}, Batch {}) end adding sim {}\n", device, batch, sims.size());
 #endif
 }
@@ -55,11 +55,11 @@ vector<bool> VX3_SimulationManager::runSims(int max_steps) {
         sim_index++;
     }
 
-#ifdef DEBUG_SIMULATION
+#ifdef DEBUG_SIMULATION_MANAGER
     print("(Device {}, Batch {}) begin init sims\n", device, batch);
 #endif
     exec.init(kernels, stream, -1, VX3_RECORD_RESCALE);
-#ifdef DEBUG_SIMULATION
+#ifdef DEBUG_SIMULATION_MANAGER
     print("(Device {}, Batch {}) end init sims\n", device, batch);
 #endif
 
@@ -88,13 +88,13 @@ vector<bool> VX3_SimulationManager::runSims(int max_steps) {
                 result[kernel_indices[i]] = false;
             }
         }
-#ifdef DEBUG_SIMULATION
+#ifdef DEBUG_SIMULATION_MANAGER
         print("(Device {}, Batch {}) step {} finished\n", device, batch, step);
 #endif
     }
     VcudaStreamSynchronize(stream);
     vector<thread> save_workers;
-#ifdef DEBUG_SIMULATION
+#ifdef DEBUG_SIMULATION_MANAGER
     print("(Device {}, Batch {}) starting save workers\n", device, batch);
 #endif
     for (size_t i = 0; i < sims.size(); i++) {
@@ -103,14 +103,14 @@ vector<bool> VX3_SimulationManager::runSims(int max_steps) {
     }
     for (auto &worker : save_workers)
         worker.join();
-#ifdef DEBUG_SIMULATION
+#ifdef DEBUG_SIMULATION_MANAGER
     print("(Device {}, Batch {}) saving finished\n", device, batch);
 #endif
 
     exec.free();
 
     VcudaStreamDestroy(stream);
-#ifdef DEBUG_SIMULATION
+#ifdef DEBUG_SIMULATION_MANAGER
     print("(Device {}, Batch {}) cleaning up finished\n", device, batch);
 #endif
     return result;
@@ -122,7 +122,7 @@ void VX3_SimulationManager::finishSim(Simulation &sim, cudaStream_t stream,
     // For sub threads, we also need to set device,
     // otherwise calls will go to GPU 0
     VcudaSetDevice(device);
-#ifdef DEBUG_SIMULATION
+#ifdef DEBUG_SIMULATION_MANAGER
     print("(Device {}, Batch {}, Sim {}) worker started\n", device, batch, sim_index);
 #endif
     if (has_no_exception) {
@@ -136,21 +136,21 @@ void VX3_SimulationManager::finishSim(Simulation &sim, cudaStream_t stream,
                 Vfloat(voxel_material.g) / 255., Vfloat(voxel_material.b) / 255.,
                 Vfloat(voxel_material.a) / 255.);
         }
-#ifdef DEBUG_SIMULATION
+#ifdef DEBUG_SIMULATION_MANAGER
         print("(Device {}, Batch {}, Sim {}) begin saving\n", device, batch, sim_index);
 #endif
         saveResult(sim, stream);
-#ifdef DEBUG_SIMULATION
+#ifdef DEBUG_SIMULATION_MANAGER
         print("(Device {}, Batch {}, Sim {}) result saved\n", device, batch, sim_index);
 #endif
         saveRecord(sim, stream);
-#ifdef DEBUG_SIMULATION
+#ifdef DEBUG_SIMULATION_MANAGER
         print("(Device {}, Batch {}, Sim {}) record saved\n", device, batch, sim_index);
 #endif
     }
     sim.kernel_manager.freeKernel(sim.kernel, stream);
 
-#ifdef DEBUG_SIMULATION
+#ifdef DEBUG_SIMULATION_MANAGER
     print("(Device {}, Batch {}, Sim {}) kernel freed\n", device, batch, sim_index);
 #endif
 }

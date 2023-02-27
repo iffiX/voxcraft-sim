@@ -48,6 +48,12 @@ __device__ void VX3_Voxel::timeStep(VX3_VoxelyzeKernel &k, Vindex voxel, Vfloat 
     // assert non QNAN
     assert(not isnan(cur_force.x) && not isnan(cur_force.y) && not isnan(cur_force.z));
 
+#ifdef DEBUG_VOXEL_AND_LINK_VALUES
+    CUDA_PRINTF_ASSERT(not isnan(cur_force.x));
+    CUDA_PRINTF_ASSERT(not isnan(cur_force.y));
+    CUDA_PRINTF_ASSERT(not isnan(cur_force.z));
+#endif
+
     Vec3f _linear_momentum = V_G(linear_momentum);
     _linear_momentum += cur_force * dt;
     V_S(linear_momentum, _linear_momentum);
@@ -83,6 +89,13 @@ __device__ void VX3_Voxel::timeStep(VX3_VoxelyzeKernel &k, Vindex voxel, Vfloat 
         setBoolState(ctx, voxel, FLOOR_STATIC_FRICTION, false);
 
     V_S(position, V_G(position) + translate);
+
+#ifdef DEBUG_VOXEL_AND_LINK_VALUES
+    CUDA_PRINTF_ASSERT(not isnan(V_G(position).x));
+    CUDA_PRINTF_ASSERT(not isnan(V_G(position).y));
+    CUDA_PRINTF_ASSERT(not isnan(V_G(position).z));
+#endif
+
     // Rotation
     Vec3f current_momentum = moment(ctx, voxel);
     V_S(angular_momentum, V_G(angular_momentum) + current_momentum * dt);
@@ -91,6 +104,16 @@ __device__ void VX3_Voxel::timeStep(VX3_VoxelyzeKernel &k, Vindex voxel, Vfloat 
     V_S(orientation, Quat3f(V_G(angular_momentum) *
                             (dt * VM_G(V_G(voxel_material), moment_inertia_inverse))) *
                          V_G(orientation));
+
+#ifdef DEBUG_VOXEL_AND_LINK_VALUES
+    CUDA_PRINTF_ASSERT(not isnan(V_G(angular_momentum).x));
+    CUDA_PRINTF_ASSERT(not isnan(V_G(angular_momentum).y));
+    CUDA_PRINTF_ASSERT(not isnan(V_G(angular_momentum).z));
+    CUDA_PRINTF_ASSERT(not isnan(V_G(orientation).x));
+    CUDA_PRINTF_ASSERT(not isnan(V_G(orientation).y));
+    CUDA_PRINTF_ASSERT(not isnan(V_G(orientation).z));
+    CUDA_PRINTF_ASSERT(not isnan(V_G(orientation).w));
+#endif
 
     //	we need to check for friction conditions here (after calculating the translation)
     // and stop things accordingly
@@ -102,18 +125,34 @@ __device__ void VX3_Voxel::timeStep(VX3_VoxelyzeKernel &k, Vindex voxel, Vfloat 
         }
     }
 
+#ifdef DEBUG_VOXEL_AND_LINK_VALUES
+    CUDA_PRINTF_ASSERT(not isnan(V_G(angular_momentum).x));
+    CUDA_PRINTF_ASSERT(not isnan(V_G(angular_momentum).y));
+    CUDA_PRINTF_ASSERT(not isnan(V_G(angular_momentum).z));
+#endif
+
     //    if (k.enable_signals) {
     //        propagateSignal(ctx, voxel, current_time);
     //        packMaker(ctx, voxel, current_time);
     //        localSignalDecay(ctx, voxel, current_time);
     //    }
+
     V_S(poissons_strain, strain(ctx, voxel, true));
     V_S(nnn_offset, cornerOffset(ctx, voxel, NNN));
     V_S(ppp_offset, cornerOffset(ctx, voxel, PPP));
+
+#ifdef DEBUG_VOXEL_AND_LINK_VALUES
+    CUDA_PRINTF_ASSERT(not isnan(V_G(poissons_strain).x));
+    CUDA_PRINTF_ASSERT(not isnan(V_G(poissons_strain).y));
+    CUDA_PRINTF_ASSERT(not isnan(V_G(poissons_strain).z));
+#endif
 }
 
 __device__ void VX3_Voxel::updateTemperature(VX3_Context &ctx, Vindex voxel,
                                              Vfloat temperature) {
+#ifdef DEBUG_VOXEL_AND_LINK_VALUES
+    CUDA_PRINTF_ASSERT(not isnan(temperature));
+#endif
     V_S(temperature, temperature);
 }
 

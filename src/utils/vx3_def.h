@@ -5,6 +5,9 @@
 #include <cstdint>
 #include <limits>
 
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
+
 #define CEIL(x, y) ((x) + (y) - 1) / (y)
 #define FLOOR(x, y) ((x) / (y))
 #define ALIGN(x, y) (CEIL(x, y) * y)

@@ -57,9 +57,9 @@ void VX3_Config::parseSettings() {
     structure.read(config_tree.get_child("VXA.VXC.Structure"));
 
     if (not structure.has_phase_offsets) {
-        for (size_t v = 0; v < structure.data.size(); v++)
-            structure.phase_offsets[v] =
-                palette.materials[structure.data[v]].material_temp_phase;
+        for (size_t i = 0; i < structure.phase_offsets.size(); i++)
+            structure.phase_offsets[i] =
+                palette.materials[structure.data[i]].material_temp_phase;
     }
 
     // VXA.RawPrint

@@ -5,6 +5,7 @@
 #ifndef VX3_CONTEXT_H
 #define VX3_CONTEXT_H
 
+#include "utils/vx3_def.h"
 #include "utils/vx3_conf.h"
 #include "utils/vx3_soa.h"
 #include "vx3/vx3_link.h"
@@ -32,8 +33,6 @@ struct VX3_Context {
     VX3_hdStructOfArrays<VX3_Voxel> voxels;
 };
 
-#define STRINGIFY(x) #x
-#define TOSTRING(x) STRINGIFY(x)
 #ifndef DEBUG_SOA
 #define DEBUG_ARGS(method)
 #else
