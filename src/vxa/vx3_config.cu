@@ -60,7 +60,7 @@ void VX3_Config::parseSettings() {
     for (auto d : structure.data) {
         if (d < 0 || d >= palette.materials.size()) {
             throw std::runtime_error(
-                fmt::format("Material {} referenced in structure data doesn't exist", d));
+                fmt::format("Material {:d} referenced in structure data doesn't exist", d));
         }
     }
 
