@@ -59,8 +59,8 @@ void VX3_Config::parseSettings() {
     // Validate structure
     for (auto d : structure.data) {
         if (d < 0 || d >= palette.materials.size()) {
-            throw std::runtime_error(
-                fmt::format("Material {:d} referenced in structure data doesn't exist", d));
+            throw std::runtime_error(fmt::format(
+                "Material {:d} referenced in structure data doesn't exist", d));
         }
     }
 
@@ -395,7 +395,12 @@ bool VX3_StructureConfig::read_float_layer(
                                                section, l, splitted_values.size(),
                                                voxel_per_layer_num));
         for (size_t i = 0; i < voxel_per_layer_num; i++) {
-            layer_data[l * voxel_per_layer_num + i] = stof(splitted_values[i]);
+            Vfloat val = stod(splitted_values[i]);
+            if (not isfinite(val))
+                throw std::invalid_argument(
+                    format("{} layer {} has invalid float value: {}", section, l,
+                           splitted_values[i]));
+            layer_data[l * voxel_per_layer_num + i] = val;
         }
         l++;
     }
@@ -416,9 +421,22 @@ bool VX3_StructureConfig::read_vec3f_layer(
                                                section, l, splitted_values.size(),
                                                3 * voxel_per_layer_num));
         for (size_t i = 0; i < voxel_per_layer_num; i++) {
-            layer_data[l * voxel_per_layer_num + i] =
-                Vec3f(stof(splitted_values[i * 3]), stof(splitted_values[i * 3 + 1]),
-                      stof(splitted_values[i * 3 + 2]));
+            Vfloat val0 = stod(splitted_values[i * 3]),
+                   val1 = stod(splitted_values[i * 3 + 1]),
+                   val2 = stod(splitted_values[i * 3 + 2]);
+            if (not isfinite(val0))
+                throw std::invalid_argument(
+                    format("{} layer {} has invalid Vec3f value at position 0: {}",
+                           section, l, splitted_values[i * 3]));
+            if (not isfinite(val1))
+                throw std::invalid_argument(
+                    format("{} layer {} has invalid Vec3f value at position 1: {}",
+                           section, l, splitted_values[i * 3 + 1]));
+            if (not isfinite(val2))
+                throw std::invalid_argument(
+                    format("{} layer {} has invalid Vec3f value at position 2: {}",
+                           section, l, splitted_values[i * 3 + 2]));
+            layer_data[l * voxel_per_layer_num + i] = Vec3f(val0, val1, val2);
         }
         l++;
     }
