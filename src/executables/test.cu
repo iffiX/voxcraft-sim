@@ -109,10 +109,11 @@ int main(int argc, char **argv) {
         stringstream robot_buffer;
         robot_buffer << robot_file.rdbuf();
         auto robot = robot_buffer.str();
-        bases.push_back(base);
-        robots.push_back(robot);
+//        bases.push_back(base);
+//        robots.push_back(robot);
+        VX3_Config config(base, robot);
     }
 
-    Voxcraft vx({}, 128);
-    auto result = vx.runSims(bases, robots);
+//    Voxcraft vx({}, 128);
+//    auto result = vx.runSims(bases, robots);
 }
