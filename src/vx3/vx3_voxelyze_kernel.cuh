@@ -79,7 +79,7 @@ struct __align__(8) VX3_VoxelyzeKernel {
     Vfloat temp_period = 0;
 
     // Some other preset attributes
-    Vindex *target_indices = nullptr;
+    Vindex *d_target_indices = nullptr;
     size_t target_num = 0;
 
     /**

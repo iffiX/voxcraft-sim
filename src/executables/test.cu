@@ -104,16 +104,16 @@ int main(int argc, char **argv) {
     vector<string> bases, robots;
 
     for (size_t i = 0; i < 128; i++) {
-        auto robot_config_path = (input / fmt::format("{}.vxd", i)).string();
+        // auto robot_config_path = (input / fmt::format("{}.vxd", i)).string();
+        auto robot_config_path = (input / "robot.vxd").string();
         ifstream robot_file(robot_config_path);
         stringstream robot_buffer;
         robot_buffer << robot_file.rdbuf();
         auto robot = robot_buffer.str();
-//        bases.push_back(base);
-//        robots.push_back(robot);
-        VX3_Config config(base, robot);
+        bases.push_back(base);
+        robots.push_back(robot);
     }
 
-//    Voxcraft vx({}, 128);
-//    auto result = vx.runSims(bases, robots);
+    Voxcraft vx({}, 128);
+    auto result = vx.runSims(bases, robots);
 }

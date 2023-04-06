@@ -15,7 +15,7 @@ VX3_VoxelyzeKernelManager::createKernelFromConfig(const VX3_Config &config,
     for (auto &material_config : config.palette.materials) {
         if (material_config.material_id == 0) {
             // The default "empty" material
-            ictx.voxel_materials.emplace_back(VX3_VoxelMaterial());
+            ictx.voxel_materials.emplace_back();
         } else {
             addVoxelMaterial(material_config, (int)ictx.voxel_materials.size(),
                              config.lattice.lattice_dim, config.bond_damping_z,
@@ -95,8 +95,8 @@ VX3_VoxelyzeKernelManager::createKernelFromConfig(const VX3_Config &config,
             tmp_target_indices[target_num++] = vox;
         }
     }
-    VcudaMallocAsync(&kernel.target_indices, sizeof(Vindex) * target_num, stream);
-    VcudaMemcpyAsync(kernel.target_indices, tmp_target_indices,
+    VcudaMallocAsync(&kernel.d_target_indices, sizeof(Vindex) * target_num, stream);
+    VcudaMemcpyAsync(kernel.d_target_indices, tmp_target_indices,
                      sizeof(Vindex) * target_num, cudaMemcpyHostToDevice, stream);
     // Make sure all host data are transferred
     VcudaStreamSynchronize(stream);
@@ -112,6 +112,7 @@ void VX3_VoxelyzeKernelManager::freeKernel(VX3_VoxelyzeKernel &kernel,
     kernel.ctx.voxel_materials.free(stream);
     kernel.ctx.links.free(stream);
     kernel.ctx.voxels.free(stream);
+    VcudaFreeAsync(kernel.d_target_indices, stream);
     VcudaFreeAsync(kernel.d_steps, stream);
     VcudaFreeAsync(kernel.d_time_points, stream);
     VcudaFreeAsync(kernel.d_link_record, stream);

@@ -31,8 +31,11 @@ class VX3_SimulationManager {
     VX3_SimulationManager(int device, int batch)
         : device(device), batch(batch) {
         VcudaSetDevice(device);
-        VcudaStreamCreate(&stream);
     };
+
+    // init() -> addSim() (several) -> runSims() -> free()
+    void init();
+    void free();
     void addSim(const VX3_Config &config);
     std::vector<bool> runSims(int max_steps = 1000000);
 
