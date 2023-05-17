@@ -12,6 +12,14 @@ using namespace std;
 using namespace fmt;
 using namespace boost;
 
+void VX3_SimulationManager::init() {
+    VcudaStreamCreate(&stream);
+}
+
+void VX3_SimulationManager::free() {
+    VcudaStreamDestroy(stream);
+}
+
 void VX3_SimulationManager::addSim(const VX3_Config &config) {
 #ifdef DEBUG_SIMULATION_MANAGER
     print("(Device {}, Batch {}) begin adding sim {}\n", device, batch, sims.size());
@@ -117,8 +125,6 @@ vector<bool> VX3_SimulationManager::runSims(int max_steps) {
 #endif
 
     exec.free();
-
-    VcudaStreamDestroy(stream);
 #ifdef DEBUG_SIMULATION_MANAGER
     print("(Device {}, Batch {}) cleaning up finished\n", device, batch);
 #endif

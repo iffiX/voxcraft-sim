@@ -40,18 +40,16 @@ using custom_underlying_type =
  */
 
 template <typename T>
-constexpr auto filter_field_members = filter(refl::member_list<T>{}, [](auto member) {
-    return is_field(member);
-});
+constexpr auto filter_field_members =
+    filter(refl::member_list<T>{}, [](auto member) { return is_field(member); });
 
 template <typename T>
 using field_member_list = std::remove_const_t<decltype(filter_field_members<T>)>;
 
 template <typename T>
-constexpr auto
-    filter_unreadable_field_members = filter(refl::member_list<T>{}, [](auto member) {
-        return is_field(member) and not is_readable(member);
-    });
+constexpr auto filter_unreadable_field_members =
+    filter(refl::member_list<T>{},
+           [](auto member) { return is_field(member) and not is_readable(member); });
 
 template <typename T>
 using unreadable_field_member_list = decltype(filter_unreadable_field_members<T>);
@@ -228,6 +226,7 @@ struct VX3_hdStructOfArrays
         for (size_t i = 0; i < input.size(); i++)
             tmp[i] = input[i];
         fill(tmp, input.size(), stream);
+        delete[] tmp;
     }
 
     void fill(T *input, size_t num, const cudaStream_t &stream) {
@@ -267,10 +266,12 @@ struct VX3_hdStructOfArrays
     }
 
     void read(std::vector<T> &output, const cudaStream_t &stream) {
+        output.clear();
         T *tmp = new T[_storage_size];
         read(tmp, stream);
         for (size_t i = 0; i < _storage_size; i++)
             output.emplace_back(tmp[i]);
+        delete[] tmp;
     }
 
     void read(T *output, const cudaStream_t &stream) {
@@ -285,6 +286,8 @@ struct VX3_hdStructOfArrays
 
                 for (size_t j = 0; j < _storage_size; j++)
                     member(output[j]) = tmp[j];
+
+                delete[] tmp;
             } else {
                 // Un-flattens arrays, interleave elements as A1, B1, C1, A2, B2, C2, ...
                 // A, B, C are arrays and 1, 2 are sub-indicies
@@ -557,7 +560,7 @@ struct VX3_hdStructOfArrays
      * calling the function.
      */
     template <auto Func, bool NoRead = false, bool NoWrite = false, typename... Args>
-    __device__ decltype(auto) call(size_t index, Args &&... args DEBUG_INPUT) {
+    __device__ decltype(auto) call(size_t index, Args &&...args DEBUG_INPUT) {
         DEBUG_OUTPUT_AND_ASSERT(index, _storage_size)
         T t{};
         FuncReturnGuard<NoWrite> guard(*this, t, index);

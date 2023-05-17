@@ -588,10 +588,10 @@ __global__ void computeTargetDistances(VX3_VoxelyzeKernel *kernels,
     Vfloat local_closeness = 0;
     Vfloat radius = kernel.max_dist_in_voxel_lengths_to_count_as_pair * kernel.vox_size;
     if (gt.tid < kernel.target_num) {
-        Vindex src_voxel = kernel.target_indices[gt.tid];
+        Vindex src_voxel = kernel.d_target_indices[gt.tid];
         for (unsigned int j = gt.tid + 1; j < kernel.target_num; j++) {
             Vec3f pos1 = V_G(src_voxel, position);
-            Vec3f pos2 = V_G(kernel.target_indices[j], position);
+            Vec3f pos2 = V_G(kernel.d_target_indices[j], position);
             Vfloat distance = pos1.dist(pos2);
             local_num_close_pairs += distance < radius;
             local_closeness += 1 / distance;

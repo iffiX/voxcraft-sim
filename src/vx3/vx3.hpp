@@ -104,11 +104,14 @@ class Voxcraft {
                                     const std::vector<std::string> &experiment_configs,
                                     int device, int batch) {
         VX3_SimulationManager sm(device, batch);
+        sm.init();
         for (size_t i = 0; i < base_configs.size(); i++) {
             auto config = VX3_Config(base_configs[i], experiment_configs[i]);
             sm.addSim(config);
         }
+
         sm.runSims();
+        sm.free();
         SubResult result;
         for (auto &sim : sm.sims) {
             std::get<0>(result).emplace_back(sim.result);

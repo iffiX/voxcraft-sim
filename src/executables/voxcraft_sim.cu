@@ -72,6 +72,7 @@ int main(int argc, char **argv) {
             config.open(base_config_path, file.path().string());
             cout << "Running simulation for file: " << file.path().string() << endl;
             VX3_SimulationManager sm(0, 0);
+            sm.init();
             sm.addSim(config);
             if (sm.runSims()[0]) {
                 // Use the same file name for saving
@@ -84,6 +85,7 @@ int main(int argc, char **argv) {
                                            file.path().filename().string(),
                                            sm.sims[0].result);
             }
+            sm.free();
         }
     }
 }
