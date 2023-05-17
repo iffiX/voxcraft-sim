@@ -15,7 +15,9 @@ struct __align__(8) VX3_VoxelyzeKernel {
      * Note: memory management is done by VX3_VoxelyzeKernelManager
      */
     bool isStopConditionMet() const;
-    Vfloat computeFitness() const;
+    bool isResultStartConditionMet() const;
+    bool isResultEndConditionMet() const;
+    Vfloat computeFitness(const Vec3f &start_center_of_mass, const Vec3f &end_center_of_mass) const;
     void adjustRecordFrameStorage(size_t required_size, cudaStream_t stream);
 
     // update sub-routines used by doTimeStep
@@ -35,8 +37,10 @@ struct __align__(8) VX3_VoxelyzeKernel {
     // In VXA.Simulator.Integration
     Vfloat dt_frac = 0;
 
-    // In VXA.Simulator.StopCondition
-    VX3_MathTreeTokens stop_condition_formula;
+    // In VXA.Simulator.Condition
+    VX3_MathTreeTokens stop_condition;
+    VX3_MathTreeTokens result_start_condition;
+    VX3_MathTreeTokens result_end_condition;
 
     // In VXA.Simulator.RecordHistory
     int record_step_size = 0;

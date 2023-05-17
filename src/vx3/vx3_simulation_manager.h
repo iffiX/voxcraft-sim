@@ -15,6 +15,8 @@ class VX3_SimulationManager {
   public:
     struct Simulation {
         bool is_finished = false;
+        bool is_result_started = false;
+        bool is_result_ended = false;
         VX3_VoxelyzeKernelManager kernel_manager;
         VX3_VoxelyzeKernel kernel;
         VX3_SimulationRecord record;
@@ -39,7 +41,8 @@ class VX3_SimulationManager {
   private:
     static void finishSim(Simulation &sim, cudaStream_t stream, bool has_no_exception,
                           int device, int batch, int sim_index);
-    static void saveResult(Simulation &sim, cudaStream_t stream);
+    static void saveResultStart(Simulation &sim, cudaStream_t stream);
+    static void saveResultEnd(Simulation &sim, cudaStream_t stream);
     static void saveRecord(Simulation &sim, cudaStream_t stream);
 };
 

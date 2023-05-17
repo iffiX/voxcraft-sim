@@ -70,6 +70,15 @@ vector<bool> VX3_SimulationManager::runSims(int max_steps) {
             if (not sim.is_finished and sim.kernel.isStopConditionMet()) {
                 sim.is_finished = true;
             }
+            if (not sim.is_result_started and sim.kernel.isResultStartConditionMet()) {
+                sim.is_result_started = true;
+                saveResultStart(sim, stream);
+            }
+            if ((sim.is_result_started and not sim.is_result_ended and sim.kernel.isResultEndConditionMet())
+                or step == max_steps - 1) {
+                sim.is_result_ended = true;
+                saveResultEnd(sim, stream);
+            }
             if (not sim.is_finished) {
                 kernel_indices.push_back(i);
             }
@@ -139,10 +148,6 @@ void VX3_SimulationManager::finishSim(Simulation &sim, cudaStream_t stream,
 #ifdef DEBUG_SIMULATION_MANAGER
         print("(Device {}, Batch {}, Sim {}) begin saving\n", device, batch, sim_index);
 #endif
-        saveResult(sim, stream);
-#ifdef DEBUG_SIMULATION_MANAGER
-        print("(Device {}, Batch {}, Sim {}) result saved\n", device, batch, sim_index);
-#endif
         saveRecord(sim, stream);
 #ifdef DEBUG_SIMULATION_MANAGER
         print("(Device {}, Batch {}, Sim {}) record saved\n", device, batch, sim_index);
@@ -155,13 +160,10 @@ void VX3_SimulationManager::finishSim(Simulation &sim, cudaStream_t stream,
 #endif
 }
 
-void VX3_SimulationManager::saveResult(Simulation &sim, cudaStream_t stream) {
+void VX3_SimulationManager::saveResultStart(Simulation &sim, cudaStream_t stream) {
     // insert results to h_results
-    sim.result.current_time = sim.kernel.time;
-    sim.result.fitness_score = sim.kernel.computeFitness();
-    sim.result.initial_center_of_mass = sim.kernel.initial_center_of_mass;
-    sim.result.current_center_of_mass = sim.kernel.current_center_of_mass;
-    sim.result.num_close_pairs = sim.kernel.num_close_pairs;
+    sim.result.start_time = sim.kernel.time;
+    sim.result.start_center_of_mass = sim.kernel.current_center_of_mass;
 
     // Save voxel related states
     sim.result.vox_size = sim.kernel.vox_size;
@@ -169,19 +171,33 @@ void VX3_SimulationManager::saveResult(Simulation &sim, cudaStream_t stream) {
     sim.result.save_position_of_all_voxels = sim.kernel.save_position_of_all_voxels;
 
     vector<VX3_Voxel> voxels;
+    sim.kernel.ctx.voxels.read(voxels, stream);
+    for (auto &voxel : voxels) {
+        sim.result.voxel_start_positions.push_back(voxel.position);
+    }
+}
+
+void VX3_SimulationManager::saveResultEnd(Simulation &sim, cudaStream_t stream) {
+    // insert results to h_results
+    sim.result.end_time = sim.kernel.time;
+    sim.result.end_center_of_mass = sim.kernel.current_center_of_mass;
+    sim.result.fitness_score = sim.kernel.computeFitness(sim.result.start_center_of_mass, sim.result.end_center_of_mass);
+    sim.result.num_close_pairs = sim.kernel.num_close_pairs;
+
+    vector<VX3_Voxel> voxels;
     vector<VX3_VoxelMaterial> voxel_materials;
     sim.kernel.ctx.voxels.read(voxels, stream);
     sim.kernel.ctx.voxel_materials.read(voxel_materials, stream);
     sim.result.num_measured_voxel = 0;
     sim.result.total_distance_of_all_voxels = 0.0;
+    size_t idx = 0;
     for (auto &voxel : voxels) {
-        sim.result.voxel_initial_positions.push_back(voxel.initial_position);
-        sim.result.voxel_final_positions.push_back(voxel.position);
+        sim.result.voxel_end_positions.push_back(voxel.position);
         sim.result.voxel_materials.push_back((int)voxel.voxel_material);
         if (voxel_materials[voxel.voxel_material].is_measured) {
             sim.result.num_measured_voxel++;
             sim.result.total_distance_of_all_voxels +=
-                voxel.position.dist(voxel.initial_position);
+                    voxel.position.dist(sim.result.voxel_start_positions[idx]);
         }
     }
 }

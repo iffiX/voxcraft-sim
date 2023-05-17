@@ -41,10 +41,11 @@ struct VX3_SimulationRecord {
 };
 
 struct VX3_SimulationResult {
-    Vfloat current_time = 0.0;
+    Vfloat start_time = 0.0;
+    Vfloat end_time = 0.0;
     Vfloat fitness_score;
-    Vec3f initial_center_of_mass;
-    Vec3f current_center_of_mass;
+    Vec3f start_center_of_mass;
+    Vec3f end_center_of_mass;
     int num_close_pairs = 0;
 
     int num_voxel;
@@ -55,8 +56,8 @@ struct VX3_SimulationResult {
     bool save_position_of_all_voxels = false;
 
     std::vector<int> voxel_materials;
-    std::vector<Vec3f> voxel_initial_positions;
-    std::vector<Vec3f> voxel_final_positions;
+    std::vector<Vec3f> voxel_start_positions;
+    std::vector<Vec3f> voxel_end_positions;
 };
 
 std::string saveSimulationResult(const std::string &input_dir,

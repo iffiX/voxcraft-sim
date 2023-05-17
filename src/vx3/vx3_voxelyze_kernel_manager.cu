@@ -46,7 +46,9 @@ VX3_VoxelyzeKernelManager::createKernelFromConfig(const VX3_Config &config,
     kernel.dt_frac = config.dt_frac;
 
     // In VXA.Simulator.StopCondition
-    setMathExpression(kernel.stop_condition_formula, config.stop_condition_formula);
+    setMathExpression(kernel.stop_condition, config.stop_condition);
+    setMathExpression(kernel.result_start_condition, config.result_start_condition);
+    setMathExpression(kernel.result_end_condition, config.result_end_condition);
 
     // In VXA.Simulator.RecordHistory
     kernel.record_step_size = config.record_step_size;

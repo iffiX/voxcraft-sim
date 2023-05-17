@@ -88,10 +88,18 @@ void VX3_Config::parseSettings() {
     col_damping_z = config_tree.get("VXA.Simulator.Damping.ColDampingZ", (Vfloat)1.0);
     slow_damping_z = config_tree.get("VXA.Simulator.Damping.SlowDampingZ", (Vfloat)1.0);
 
-    // In VXA.Simulator.StopCondition
-    parseMathExpression(stop_condition_formula,
+    // In VXA.Simulator.Condition
+    parseMathExpression(stop_condition,
                         config_tree.get_child_optional(
-                            "VXA.Simulator.StopCondition.StopConditionFormula"));
+                            "VXA.Simulator.Condition.StopCondition"));
+    if (not config_tree.get_child_optional("VXA.Simulator.Condition.StopCondition"))
+        cout << "Warning: stop condition not set" << endl;
+    parseMathExpression(result_start_condition,
+                        config_tree.get_child_optional(
+                                "VXA.Simulator.Condition.ResultStartCondition"));
+    parseMathExpression(result_end_condition,
+                        config_tree.get_child_optional(
+                                "VXA.Simulator.Condition.ResultEndCondition"));
 
     // In VXA.Simulator.RecordHistory
     record_step_size = config_tree.get("VXA.Simulator.RecordHistory.RecordStepSize", 0);
@@ -157,8 +165,13 @@ void VX3_Config::parseSettings() {
 
 void VX3_Config::parseMathExpression(VX3_MathTreeExpression &expr,
                                      const boost::optional<pt::ptree &> &expr_tree) {
-    if (not expr_tree)
+    if (not expr_tree) {
+        // By default, empty expression only has an END token
+        VX3_MathTreeToken token;
+        token.op = mtEND;
+        expr.emplace_back(token);
         return;
+    }
     vector<pair<string, string>> raw_tokens;
     postFixTraversal(expr_tree.get(), "mtEND", "", raw_tokens);
 

@@ -170,17 +170,52 @@ void runFunctionAndReduce(FuncType func, vector<ResultType> &result,
  * VX3_VoxelyzeKernel::isStopConditionMet
  *****************************************************************************/
 bool VX3_VoxelyzeKernel::isStopConditionMet() const {
-    return VX3_MathTree::eval(current_center_of_mass.x, current_center_of_mass.y,
-                              current_center_of_mass.z, (Vfloat)collision_count, time,
-                              recent_angle, target_closeness, num_close_pairs,
-                              (int)ctx.voxels.size(), stop_condition_formula) > 0;
+    if (stop_condition[0].op == mtEND)
+        return false;
+    else
+        return VX3_MathTree::eval(current_center_of_mass.x, current_center_of_mass.y,
+                                  current_center_of_mass.z, (Vfloat)collision_count, time,
+                                  recent_angle, target_closeness, num_close_pairs,
+                                  (int)ctx.voxels.size(), stop_condition) > 0;
 }
+
+/*****************************************************************************
+ * VX3_VoxelyzeKernel::isResultStartConditionMet
+ *****************************************************************************/
+bool VX3_VoxelyzeKernel::isResultStartConditionMet() const {
+    // By default, when result start condition is empty
+    // start recording at the first simulation step
+    if (result_start_condition[0].op == mtEND)
+        return true;
+    else
+        return VX3_MathTree::eval(current_center_of_mass.x, current_center_of_mass.y,
+                                  current_center_of_mass.z, (Vfloat)collision_count, time,
+                                  recent_angle, target_closeness, num_close_pairs,
+                                  (int)ctx.voxels.size(), result_start_condition) > 0;
+}
+
+
+/*****************************************************************************
+ * VX3_VoxelyzeKernel::isResultEndConditionMet
+ *****************************************************************************/
+bool VX3_VoxelyzeKernel::isResultEndConditionMet() const {
+    // By default, when result stop condition is empty
+    // stop recording at the last simulation step
+    if (result_end_condition[0].op == mtEND)
+        return isStopConditionMet();
+    else
+        return VX3_MathTree::eval(current_center_of_mass.x, current_center_of_mass.y,
+                                  current_center_of_mass.z, (Vfloat)collision_count, time,
+                                  recent_angle, target_closeness, num_close_pairs,
+                                  (int)ctx.voxels.size(), result_end_condition) > 0;
+}
+
 
 /*****************************************************************************
  * VX3_VoxelyzeKernel::computeFitness
  *****************************************************************************/
-Vfloat VX3_VoxelyzeKernel::computeFitness() const {
-    Vec3f offset = current_center_of_mass - initial_center_of_mass;
+Vfloat VX3_VoxelyzeKernel::computeFitness(const Vec3f &start_center_of_mass, const Vec3f &end_center_of_mass) const {
+    Vec3f offset = end_center_of_mass - start_center_of_mass;
     return VX3_MathTree::eval(offset.x, offset.y, offset.z, (Vfloat)collision_count, time,
                               recent_angle, target_closeness, num_close_pairs,
                               (int)ctx.voxels.size(), fitness_function);

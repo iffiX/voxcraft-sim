@@ -21,22 +21,23 @@ string saveSimulationResult(const string &input_dir, const string &vxa_filename,
     tr_result.put("report.best_fit.vxd_filename", vxd_filename);
     tr_result.put("report.best_fit.fitness_score", result.fitness_score);
 
-    tr_result.put("report.detail.time", result.current_time);
+    tr_result.put("report.detail.start_time", result.start_time);
+    tr_result.put("report.detail.end_time", result.end_time);
     tr_result.put("report.detail.fitness_score", result.fitness_score);
 
     tr_result.put("report.detail.num_close_pairs", result.num_close_pairs);
-    tr_result.put("report.detail.initial_center_of_mass.x",
-                  result.initial_center_of_mass.x);
-    tr_result.put("report.detail.initial_center_of_mass.y",
-                  result.initial_center_of_mass.y);
-    tr_result.put("report.detail.initial_center_of_mass.z",
-                  result.initial_center_of_mass.z);
-    tr_result.put("report.detail.current_center_of_mass.x",
-                  result.current_center_of_mass.x);
-    tr_result.put("report.detail.current_center_of_mass.y",
-                  result.current_center_of_mass.y);
-    tr_result.put("report.detail.current_center_of_mass.z",
-                  result.current_center_of_mass.z);
+    tr_result.put("report.detail.start_center_of_mass.x",
+                  result.start_center_of_mass.x);
+    tr_result.put("report.detail.start_center_of_mass.y",
+                  result.start_center_of_mass.y);
+    tr_result.put("report.detail.start_center_of_mass.z",
+                  result.start_center_of_mass.z);
+    tr_result.put("report.detail.end_center_of_mass.x",
+                  result.end_center_of_mass.x);
+    tr_result.put("report.detail.end_center_of_mass.y",
+                  result.end_center_of_mass.y);
+    tr_result.put("report.detail.end_center_of_mass.z",
+                  result.end_center_of_mass.z);
 
     tr_result.put("report.detail.num_voxel", result.num_voxel);
     tr_result.put("report.detail.num_measured_voxel", result.num_measured_voxel);
@@ -52,18 +53,18 @@ string saveSimulationResult(const string &input_dir, const string &vxa_filename,
         tr_result.put("report.detail.voxel_materials", str_tmp);
 
         str_tmp = "";
-        for (auto &pos : result.voxel_initial_positions) {
+        for (auto &pos : result.voxel_start_positions) {
             str_tmp +=
                 to_string(pos.x) + "," + to_string(pos.y) + "," + to_string(pos.z) + ";";
         }
-        tr_result.put("report.detail.voxel_initial_positions", str_tmp);
+        tr_result.put("report.detail.voxel_start_positions", str_tmp);
 
         str_tmp = "";
-        for (auto &pos : result.voxel_final_positions) {
+        for (auto &pos : result.voxel_end_positions) {
             str_tmp +=
                 to_string(pos.x) + "," + to_string(pos.y) + "," + to_string(pos.z) + ";";
         }
-        tr_result.put("report.detail.voxel_final_positions", str_tmp);
+        tr_result.put("report.detail.voxel_end_positions", str_tmp);
     }
 
     stringstream output;

@@ -130,8 +130,10 @@ public:
     Vfloat col_damping_z;
     Vfloat slow_damping_z;
 
-    // In VXA.Simulator.StopCondition
-    VX3_MathTreeExpression stop_condition_formula;
+    // In VXA.Simulator.Condition
+    VX3_MathTreeExpression result_start_condition;
+    VX3_MathTreeExpression result_end_condition;
+    VX3_MathTreeExpression stop_condition;
 
     // In VXA.Simulator.RecordHistory
     int record_step_size;
