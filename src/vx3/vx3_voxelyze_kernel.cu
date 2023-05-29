@@ -42,7 +42,7 @@ void computePrefixSum(GroupSizesPrefixSum &sizes, Vsize group_num) {
 
 template <typename FuncType, typename... Args>
 void runFunction(FuncType func, const VX3_VoxelyzeKernelBatchExecutor &exec, bool is_link,
-                 int block_size, const vector<size_t> &kernel_indices, Args &&...args) {
+                 int block_size, const vector<size_t> &kernel_indices, Args &&... args) {
     if (kernel_indices.empty())
         return;
 
@@ -89,7 +89,8 @@ void runFunction(FuncType func, const VX3_VoxelyzeKernelBatchExecutor &exec, boo
  * Note: runFunctionAndReduce implicitly synchronizes stream before returning results
  * due to the call to reduce_by_group
  */
-template <typename ReduceOp, typename FuncType, typename ResultType>
+template <typename ReduceOp, size_t BlockSize = CUDA_MAX_BLOCK_SIZE, typename FuncType,
+          typename ResultType>
 void runFunctionAndReduce(FuncType func, vector<ResultType> &result,
                           ResultType init_value,
                           const VX3_VoxelyzeKernelBatchExecutor &exec, bool is_link,
@@ -148,13 +149,13 @@ void runFunctionAndReduce(FuncType func, vector<ResultType> &result,
     //    for (size_t k = 0; k < non_empty_kernel_relative_indices.size(); k++) {
     //        std::cout << "Kernel " << k << ": ";
     //        for(size_t i = offset; i < p_sum.sums[k]; i++) {
-    //            std::cout << ((float*)tmp)[i] << " ";
+    //            std::cout << ((Vfloat*)tmp)[i] << " ";
     //        }
     //        std::cout << std::endl;
     //        offset = p_sum.sums[k];
     //    }
 
-    auto partial_result = reduce_by_group<ResultType, ReduceOp>(
+    auto partial_result = reduce_by_group<ResultType, ReduceOp, BlockSize>(
         exec.h_reduce_output, exec.d_reduce1, exec.d_reduce2, exec.d_reduce1,
         exec.h_sizes, exec.d_sizes, group_len, exec.stream, init_value);
     //
@@ -194,7 +195,6 @@ bool VX3_VoxelyzeKernel::isResultStartConditionMet() const {
                                   (int)ctx.voxels.size(), result_start_condition) > 0;
 }
 
-
 /*****************************************************************************
  * VX3_VoxelyzeKernel::isResultEndConditionMet
  *****************************************************************************/
@@ -210,11 +210,11 @@ bool VX3_VoxelyzeKernel::isResultEndConditionMet() const {
                                   (int)ctx.voxels.size(), result_end_condition) > 0;
 }
 
-
 /*****************************************************************************
  * VX3_VoxelyzeKernel::computeFitness
  *****************************************************************************/
-Vfloat VX3_VoxelyzeKernel::computeFitness(const Vec3f &start_center_of_mass, const Vec3f &end_center_of_mass) const {
+Vfloat VX3_VoxelyzeKernel::computeFitness(const Vec3f &start_center_of_mass,
+                                          const Vec3f &end_center_of_mass) const {
     Vec3f offset = end_center_of_mass - start_center_of_mass;
     return VX3_MathTree::eval(offset.x, offset.y, offset.z, (Vfloat)collision_count, time,
                               recent_angle, target_closeness, num_close_pairs,
@@ -544,9 +544,9 @@ vector<Vec3f> VX3_VoxelyzeKernelBatchExecutor::computeCurrentCenterOfMass(
     const vector<size_t> &kernel_indices) const {
     vector<Vec3f> result(kernel_indices.size(), Vec3f(0, 0, 0));
     vector<MassDotPos> reduce_result(kernel_indices.size(), MassDotPos(0, 0, 0, 0));
-    runFunctionAndReduce<SumReduce<MassDotPos>>(computeMassDotPosition, reduce_result,
-                                                MassDotPos(0, 0, 0, 0), *this, false,
-                                                kernel_indices);
+    runFunctionAndReduce<SumReduce<MassDotPos>, 512>(
+        computeMassDotPosition, reduce_result, MassDotPos(0, 0, 0, 0), *this, false,
+        kernel_indices);
     for (size_t i = 0; i < reduce_result.size(); i++) {
         if (reduce_result[i].mass != 0) {
             auto &mdp = reduce_result[i];
