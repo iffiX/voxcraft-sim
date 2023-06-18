@@ -91,7 +91,8 @@ Vsize getReduceBufferSize(Vsize elem_size, Vsize elem_num) {
     return elem_size * grid_size;
 }
 
-Vsize getReduceByGroupBufferSize(Vsize elem_size, std::vector<Vsize> group_elem_num) {
+Vsize getReduceByGroupBufferSize(Vsize elem_size,
+                                 const std::vector<Vsize> &group_elem_num) {
     Vsize total = 0;
 
     // due to binary tree nature of algorithm
@@ -117,19 +118,21 @@ Vsize getReduceByGroupBufferSize(Vsize elem_size, std::vector<Vsize> group_elem_
  * d_reduce_buffer2 = d_in)
  * Note: reduce implicitly synchronizes stream before returning results
  */
-template <typename T, typename ReduceOp>
+template <typename T, typename ReduceOp, size_t BlockSize = CUDA_MAX_BLOCK_SIZE>
 T reduce(void *host_buffer, const void *d_in, void *d_reduce_buffer1,
          void *d_reduce_buffer2, Vsize d_in_len, const cudaStream_t &stream,
          T init_value = 0) {
+    static_assert(
+        sizeof(T) * BlockSize * 2 < 65536,
+        "The block size configuration exceeds shared memory limit, try reduce it.");
     ((T *)host_buffer)[0] = init_value;
 
-    Vsize block_size = CUDA_MAX_BLOCK_SIZE;
-    Vsize max_elems_per_block = block_size * 2;
+    Vsize max_elems_per_block = BlockSize * 2;
     Vsize grid_size = CEIL(d_in_len, max_elems_per_block);
 
     // Perform block level reduce
     block_reduce<T, ReduceOp>
-        <<<grid_size, block_size, sizeof(T) * max_elems_per_block, stream>>>(
+        <<<grid_size, BlockSize, sizeof(T) * max_elems_per_block, stream>>>(
             (const T *)d_in, (T *)d_reduce_buffer1, d_in_len, init_value);
 
     if (d_in_len < max_elems_per_block) {
@@ -146,30 +149,33 @@ T reduce(void *host_buffer, const void *d_in, void *d_reduce_buffer1,
                                    d_reduce_buffer1, grid_size, stream, init_value);
 }
 
-template <typename T, typename ReduceOp>
+template <typename T, typename ReduceOp, size_t BlockSize = CUDA_MAX_BLOCK_SIZE>
 std::vector<T>
 _reduce_by_group(void *host_buffer, const void *d_in, void *d_reduce_buffer1,
                  void *d_reduce_buffer2, Vsize *h_sizes, Vsize *d_sizes, Vsize group_num,
                  Vsize level, Vsize level_num, const cudaStream_t &stream, T init_value) {
-    Vsize block_size, grid_size;
+    static_assert(
+        sizeof(T) * BlockSize * 2 < 65536,
+        "The block size configuration exceeds shared memory limit, try reduce it.");
+    Vsize grid_size;
 
-    block_size = CUDA_MAX_BLOCK_SIZE;
     // Perform align
     // The number of total needed threads is equal to
     // the last prefix sum of the output group sizes
-    grid_size = CEIL(h_sizes[group_num * 3 - 1], block_size);
-    block_align<T><<<grid_size, block_size, 0, stream>>>(
+    grid_size = CEIL(h_sizes[group_num * 3 - 1], BlockSize);
+    block_align<T><<<grid_size, BlockSize, 0, stream>>>(
         (const T *)d_in, (T *)d_reduce_buffer1, d_sizes, d_sizes + group_num,
         d_sizes + group_num * 2, group_num, init_value);
 
     // Perform block level reduce
     // d_in_len argument is also equal to the last
     // prefix sum of the output group sizes
-    Vsize max_elems_per_block = block_size * 2;
+    Vsize max_elems_per_block = BlockSize * 2;
     Vsize d_in_len = h_sizes[group_num * 3 - 1];
     grid_size = CEIL(d_in_len, max_elems_per_block);
+
     block_reduce<T, ReduceOp>
-        <<<grid_size, block_size, sizeof(T) * max_elems_per_block, stream>>>(
+        <<<grid_size, BlockSize, sizeof(T) * max_elems_per_block, stream>>>(
             (const T *)d_reduce_buffer1, (T *)d_reduce_buffer2, d_in_len, init_value);
 
     if (level + 1 == level_num) {
@@ -183,7 +189,7 @@ _reduce_by_group(void *host_buffer, const void *d_in, void *d_reduce_buffer1,
         return std::move(result);
     } else
         // Reduce recursively
-        return _reduce_by_group<T, ReduceOp>(
+        return _reduce_by_group<T, ReduceOp, BlockSize>(
             host_buffer, d_reduce_buffer2, d_reduce_buffer1, d_reduce_buffer2,
             h_sizes + group_num * 3, d_sizes + group_num * 3, group_num, level + 1,
             level_num, stream, init_value);
@@ -207,7 +213,7 @@ _reduce_by_group(void *host_buffer, const void *d_in, void *d_reduce_buffer1,
  * Note: To just use 2 reduce buffers, set d_reduce_buffer2 = d_in)
  * Note: reduce_by_group implicitly synchronizes stream before returning results
  */
-template <typename T, typename ReduceOp>
+template <typename T, typename ReduceOp, size_t BlockSize = CUDA_MAX_BLOCK_SIZE>
 std::vector<T> reduce_by_group(void *host_buffer, const void *d_in,
                                void *d_reduce_buffer1, void *d_reduce_buffer2,
                                Vsize *h_sizes_buffer, Vsize *d_sizes_buffer,
@@ -218,7 +224,7 @@ std::vector<T> reduce_by_group(void *host_buffer, const void *d_in,
 
     // Compute sizes
     auto group_sizes = d_in_group_len;
-    Vsize max_elems_per_block = CUDA_MAX_BLOCK_SIZE * 2;
+    Vsize max_elems_per_block = BlockSize * 2;
     auto *h_sizes = h_sizes_buffer;
     Vsize level_num = 1;
     bool is_all_reduced;
@@ -260,7 +266,7 @@ std::vector<T> reduce_by_group(void *host_buffer, const void *d_in,
     VcudaMemcpyAsync(d_sizes_buffer, h_sizes_buffer,
                      sizeof(Vsize) * d_in_group_len.size() * 3 * MAX_GROUP_REDUCE_LEVEL,
                      cudaMemcpyHostToDevice, stream);
-    return std::move(_reduce_by_group<T, ReduceOp>(
+    return std::move(_reduce_by_group<T, ReduceOp, BlockSize>(
         host_buffer, d_in, d_reduce_buffer1, d_reduce_buffer2, h_sizes_buffer,
         d_sizes_buffer, d_in_group_len.size(), 0, level_num, stream, init_value));
 }
