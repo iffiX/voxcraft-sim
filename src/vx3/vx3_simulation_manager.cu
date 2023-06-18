@@ -1,24 +1,20 @@
 #include "vx3_simulation_manager.h"
 
+#include "utils/vx3_conf.h"
+#include "vx3/vx3_voxelyze_kernel.cuh"
+#include <fmt/format.h>
 #include <iostream>
 #include <queue>
 #include <stack>
 #include <thread>
-#include <fmt/format.h>
-#include "utils/vx3_conf.h"
-#include "vx3/vx3_voxelyze_kernel.cuh"
 
 using namespace std;
 using namespace fmt;
 using namespace boost;
 
-void VX3_SimulationManager::init() {
-    VcudaStreamCreate(&stream);
-}
+void VX3_SimulationManager::init() { VcudaStreamCreate(&stream); }
 
-void VX3_SimulationManager::free() {
-    VcudaStreamDestroy(stream);
-}
+void VX3_SimulationManager::free() { VcudaStreamDestroy(stream); }
 
 void VX3_SimulationManager::addSim(const VX3_Config &config) {
 #ifdef DEBUG_SIMULATION_MANAGER
@@ -35,19 +31,20 @@ void VX3_SimulationManager::addSim(const VX3_Config &config) {
 #endif
 }
 
-vector<bool> VX3_SimulationManager::runSims(int max_steps) {
+vector<bool> VX3_SimulationManager::runSims(int max_steps, bool save_result,
+                                            bool save_record) {
     if (sims.empty())
         return {};
 
     size_t sim_index = 0;
-    vector<bool> result(sims.size(), true);
+    vector<bool> has_no_exceptions(sims.size(), true);
     for (auto &sim : sims) {
         if (sim.kernel.ctx.voxels.size() == 0 and sim.kernel.ctx.links.size() == 0) {
-            cout << format("(Device {}, Batch {})", device, batch)
-                 << COLORCODE_BOLD_RED << "No links and no voxels. Simulation "
-                 << sim_index << " abort. " << COLORCODE_RESET << endl;
+            cout << format("(Device {}, Batch {})", device, batch) << COLORCODE_BOLD_RED
+                 << "No links and no voxels. Simulation " << sim_index << " skipped. "
+                 << COLORCODE_RESET << endl;
             sim.is_finished = true;
-            result[sim_index] = false;
+            has_no_exceptions[sim_index] = false;
         }
         sim_index++;
     }
@@ -75,15 +72,17 @@ vector<bool> VX3_SimulationManager::runSims(int max_steps) {
         vector<size_t> kernel_indices;
         for (size_t i = 0; i < kernels.size(); i++) {
             auto &sim = sims[sim_indices[i]];
-            if (not sim.is_finished and sim.kernel.isStopConditionMet()) {
+            if (not sim.is_finished and exec.getKernel(i).isStopConditionMet()) {
                 sim.is_finished = true;
             }
-            if (not sim.is_result_started and sim.kernel.isResultStartConditionMet()) {
+            if (save_result and not sim.is_result_started and
+                exec.getKernel(i).isResultStartConditionMet()) {
                 sim.is_result_started = true;
                 saveResultStart(sim, stream);
             }
-            if ((sim.is_result_started and not sim.is_result_ended and sim.kernel.isResultEndConditionMet())
-                or step == max_steps - 1) {
+            if (save_result and ((sim.is_result_started and not sim.is_result_ended and
+                                  exec.getKernel(i).isResultEndConditionMet()) or
+                                 step == max_steps - 1)) {
                 sim.is_result_ended = true;
                 saveResultEnd(sim, stream);
             }
@@ -95,14 +94,14 @@ vector<bool> VX3_SimulationManager::runSims(int max_steps) {
         if (kernel_indices.empty())
             break;
 
-        auto step_result = exec.doTimeStep(kernel_indices);
+        auto step_result = exec.doTimeStep(kernel_indices, 10, 100, save_record);
         for (size_t i = 0; i < kernel_indices.size(); i++) {
             if (not step_result[i]) {
                 cout << format("(Device {}, Batch {})", device, batch)
                      << COLORCODE_BOLD_RED "Simulation " << kernel_indices[i]
                      << " diverged.\n" COLORCODE_RESET << endl;
                 sims[kernel_indices[i]].is_finished = true;
-                result[kernel_indices[i]] = false;
+                has_no_exceptions[kernel_indices[i]] = false;
             }
         }
 #ifdef DEBUG_SIMULATION_MANAGER
@@ -110,37 +109,41 @@ vector<bool> VX3_SimulationManager::runSims(int max_steps) {
 #endif
     }
     VcudaStreamSynchronize(stream);
-    vector<thread> save_workers;
-#ifdef DEBUG_SIMULATION_MANAGER
-    print("(Device {}, Batch {}) starting save workers\n", device, batch);
-#endif
-    for (size_t i = 0; i < sims.size(); i++) {
-        save_workers.emplace_back(VX3_SimulationManager::finishSim, std::ref(sims[i]), stream,
-                                  result[i], device, batch, i);
-    }
-    for (auto &worker : save_workers)
-        worker.join();
-#ifdef DEBUG_SIMULATION_MANAGER
-    print("(Device {}, Batch {}) saving finished\n", device, batch);
-#endif
 
+    if (save_record) {
+        vector<thread> save_workers;
+#ifdef DEBUG_SIMULATION_MANAGER
+        print("(Device {}, Batch {}) starting save workers\n", device, batch);
+#endif
+        for (size_t i = 0; i < sims.size(); i++) {
+            save_workers.emplace_back(VX3_SimulationManager::finishAndSaveRecordOfSim,
+                                      std::ref(sims[i]), stream, has_no_exceptions[i],
+                                      save_record, device, batch, i);
+        }
+        for (auto &worker : save_workers)
+            worker.join();
+#ifdef DEBUG_SIMULATION_MANAGER
+        print("(Device {}, Batch {}) saving finished\n", device, batch);
+#endif
+    }
     exec.free();
 #ifdef DEBUG_SIMULATION_MANAGER
     print("(Device {}, Batch {}) cleaning up finished\n", device, batch);
 #endif
-    return result;
+    return has_no_exceptions;
 }
 
-void VX3_SimulationManager::finishSim(Simulation &sim, cudaStream_t stream,
-                                      bool has_no_exception,
-                                      int device, int batch, int sim_index) {
+void VX3_SimulationManager::finishAndSaveRecordOfSim(Simulation &sim, cudaStream_t stream,
+                                                     bool has_no_exception,
+                                                     bool save_record, int device,
+                                                     int batch, int sim_index) {
     // For sub threads, we also need to set device,
     // otherwise calls will go to GPU 0
     VcudaSetDevice(device);
 #ifdef DEBUG_SIMULATION_MANAGER
     print("(Device {}, Batch {}, Sim {}) worker started\n", device, batch, sim_index);
 #endif
-    if (has_no_exception) {
+    if (save_record and has_no_exception) {
         sim.record.vox_size = sim.kernel.vox_size;
         sim.record.dt_frac = sim.kernel.dt_frac;
         sim.record.recommended_time_step = sim.kernel.recommended_time_step;
@@ -167,6 +170,7 @@ void VX3_SimulationManager::finishSim(Simulation &sim, cudaStream_t stream,
 }
 
 void VX3_SimulationManager::saveResultStart(Simulation &sim, cudaStream_t stream) {
+    sim.result.is_saved = true;
     // insert results to h_results
     sim.result.start_time = sim.kernel.time;
     sim.result.start_center_of_mass = sim.kernel.current_center_of_mass;
@@ -184,10 +188,12 @@ void VX3_SimulationManager::saveResultStart(Simulation &sim, cudaStream_t stream
 }
 
 void VX3_SimulationManager::saveResultEnd(Simulation &sim, cudaStream_t stream) {
+    sim.result.is_saved = true;
     // insert results to h_results
     sim.result.end_time = sim.kernel.time;
     sim.result.end_center_of_mass = sim.kernel.current_center_of_mass;
-    sim.result.fitness_score = sim.kernel.computeFitness(sim.result.start_center_of_mass, sim.result.end_center_of_mass);
+    sim.result.fitness_score = sim.kernel.computeFitness(sim.result.start_center_of_mass,
+                                                         sim.result.end_center_of_mass);
     sim.result.num_close_pairs = sim.kernel.num_close_pairs;
 
     vector<VX3_Voxel> voxels;
@@ -203,7 +209,7 @@ void VX3_SimulationManager::saveResultEnd(Simulation &sim, cudaStream_t stream) 
         if (voxel_materials[voxel.voxel_material].is_measured) {
             sim.result.num_measured_voxel++;
             sim.result.total_distance_of_all_voxels +=
-                    voxel.position.dist(sim.result.voxel_start_positions[idx]);
+                voxel.position.dist(sim.result.voxel_start_positions[idx]);
         }
     }
 }
@@ -211,6 +217,7 @@ void VX3_SimulationManager::saveResultEnd(Simulation &sim, cudaStream_t stream) 
 void VX3_SimulationManager::saveRecord(Simulation &sim, cudaStream_t stream) {
     if (sim.kernel.frame_num == 0)
         return;
+    sim.record.is_saved = true;
     auto tmp_steps = new unsigned long[sim.kernel.frame_num];
     auto tmp_time_points = new Vfloat[sim.kernel.frame_num];
     auto tmp_link_record =

@@ -1,5 +1,6 @@
 #ifndef VX3_VOXELYZE_KERNEL_H
 #define VX3_VOXELYZE_KERNEL_H
+
 #include "utils/vx3_cuda.cuh"
 #include "utils/vx3_force_field.h"
 #include "vx3/vx3_context.h"
@@ -15,23 +16,33 @@ struct __align__(8) VX3_VoxelyzeKernel {
      * Note: memory management is done by VX3_VoxelyzeKernelManager
      */
     bool isStopConditionMet() const;
+
     bool isResultStartConditionMet() const;
+
     bool isResultEndConditionMet() const;
-    Vfloat computeFitness(const Vec3f &start_center_of_mass, const Vec3f &end_center_of_mass) const;
+
+    Vfloat computeFitness(const Vec3f &start_center_of_mass,
+                          const Vec3f &end_center_of_mass) const;
+
     void adjustRecordFrameStorage(size_t required_size, cudaStream_t stream);
 
     // update sub-routines used by doTimeStep
     __device__ void updateLinks(Vindex local_id);
+
     __device__ void updateVoxels(Vindex local_id);
+
     __device__ void updateVoxelTemperature(Vindex local_id);
+
     __device__ void saveRecordFrame(Vindex tid);
 
     /* data */
     /**
-     * Pre-set attributes (kernel read only)
+     * Runtime data (set by host, kernel read only)
      */
+    // Data structure that holds info for voxels, links, materials
     VX3_Context ctx;
 
+    // In VXA.VXC.Lattice.Lattice_Dim
     Vfloat vox_size = 0; // lattice size
 
     // In VXA.Simulator.Integration
@@ -53,10 +64,11 @@ struct __align__(8) VX3_VoxelyzeKernel {
     bool enable_collision = false;
 
     //// Collision constants
-    Vfloat bounding_radius; //(in voxel units) radius to collide a voxel at
-    Vfloat
-        watch_distance; //(in voxel units) Distance between voxels (not including
-                        // 2*boundingRadius for each voxel) to watch for collisions from.
+    ////// (in voxel units) radius to collide a voxel at
+    Vfloat bounding_radius;
+    ////// (in voxel units) Distance between voxels (not including
+    ////// 2*boundingRadius for each voxel) to watch for collisions from.
+    Vfloat watch_distance;
 
     //// Safety guard during the creation of new link
     int safety_guard = 500;
@@ -82,22 +94,42 @@ struct __align__(8) VX3_VoxelyzeKernel {
     Vfloat temp_amplitude = 0;
     Vfloat temp_period = 0;
 
-    // Some other preset attributes
+    // Variables for target voxel tracing
     Vindex *d_target_indices = nullptr;
     size_t target_num = 0;
 
-    /**
-     * Post-set attributes (kernel read only)
-     */
-    Vfloat recommended_time_step = 0;
-    Vfloat dt = 0;
+    // Variables for recording
     Vfloat rescale = 1;
+
+    /**
+     * Runtime states
+     * 1. 2 copies maintained separately by device and host (host, dev)
+     * 2. Maintained by host, copy to device, once on init (host->dev, once)
+     * 3. Maintained by host, copy to device, multiple times during run (host->dev, multi)
+     */
+    // (host->dev, multi)
+    Vfloat recommended_time_step = 0;
+    // (host, dev)
+    Vfloat dt = 0;
+    // (host, dev, once)
     int real_step_size = 0;
-
+    // (host, dev)
     Vfloat time = 0.0f; // current time of the simulation in seconds
+    // (host, dev)
     Vsize step = 0;
+    // (host, dev)
+    Vsize frame_num = 0;
 
-    // All below Metrics
+    // Variables for recording
+    // (host->dev, multi)
+    unsigned long *d_steps = nullptr;
+    Vfloat *d_time_points = nullptr;
+    VX3_SimulationLinkRecord *d_link_record = nullptr;
+    VX3_SimulationVoxelRecord *d_voxel_record = nullptr;
+
+    /**
+     * Metrics (set by host, not used by kernel)
+     */
     Vec3f current_center_of_mass;
     Vec3f initial_center_of_mass;
 
@@ -106,7 +138,7 @@ struct __align__(8) VX3_VoxelyzeKernel {
     Vfloat target_closeness = 0;
 
     // Calculate Angle by
-    // A---B----C
+    // A---B---C
     // A: current_center_of_mass_history[0]
     // B: current_center_of_mass_history[1]
     // C: current_center_of_mass
@@ -115,60 +147,71 @@ struct __align__(8) VX3_VoxelyzeKernel {
     Vfloat recent_angle = 0;
 
     // For frame recording
-    unsigned int frame_storage_size = 0;
-    unsigned int frame_num = 0;
-
-    /** Device side states and storage (kernel RW) **/
-    unsigned long *d_steps = nullptr;
-    Vfloat *d_time_points = nullptr;
-    VX3_SimulationLinkRecord *d_link_record = nullptr;
-    VX3_SimulationVoxelRecord *d_voxel_record = nullptr;
+    Vsize frame_storage_size = 0;
 };
 
 struct VX3_VoxelyzeKernelBatchExecutor {
     void init(const std::vector<VX3_VoxelyzeKernel *> &kernels, cudaStream_t stream,
               Vfloat dt = -1.0f, Vfloat rescale = 0.001);
+
+    void initThreadRunInfo();
+
+    void updateKernelIsRunning(const std::vector<size_t> &kernel_indices,
+                               bool init = false);
+
     void free();
+
+    const VX3_VoxelyzeKernel &getKernel(size_t kernel_index);
+
     std::vector<bool> doTimeStep(const std::vector<size_t> &kernel_indices,
                                  int dt_update_interval = 10,
                                  int divergence_check_interval = 100,
                                  bool save_frame = true);
 
-    std::vector<Vfloat>
-    recommendedTimeStep(const std::vector<size_t> &kernel_indices) const;
+    std::vector<Vfloat> recommendedTimeStep() const;
 
-    std::vector<bool> isAnyLinkDiverged(const std::vector<size_t> &kernel_indices) const;
+    std::vector<bool> isAnyLinkDiverged() const;
 
-    std::vector<Vec3f>
-    computeCurrentCenterOfMass(const std::vector<size_t> &kernel_indices) const;
-    std::vector<std::pair<int, Vfloat>>
-    computeTargetCloseness(const std::vector<size_t> &kernel_indices) const;
-    void updateMetrics(const std::vector<size_t> &kernel_indices) const;
+    std::vector<Vec3f> computeCurrentCenterOfMass() const;
 
-    void copyKernelsAsync();
+    std::vector<std::pair<int, Vfloat>> computeTargetCloseness() const;
+
+    void updateMetrics() const;
 
     cudaStream_t stream;
 
     bool is_dt_dynamic = false;
 
-    // Maintain a dedicated step counter so it will not be affected
+    // Maintain a dedicated step counter, so it will not be affected
     // by stopping a few kernels.
     Vsize step = 0;
 
-    std::vector<VX3_VoxelyzeKernel *> kernels;
+    // Kernels
+    Vsize kernel_num = 0;
     VX3_VoxelyzeKernel *h_kernels = nullptr;
     VX3_VoxelyzeKernel *d_kernels = nullptr;
 
-    // This special memory region is a pinned host memory used to
-    // perform asynchronous copy of the reduced results
-    void *h_reduce_output = nullptr;
+    // used for runFunction, runFunctionAndReduce
+    Vsize total_threads = 0;
+    std::vector<Vsize> kernel_len;
+    std::vector<Vsize> kernel_relative_indices;
 
-    Vsize *h_sizes = nullptr;
+    // These special memory regions are used for updating kernel states
+    void *h_kernel_sync = nullptr;
+    void *d_kernel_sync = nullptr;
+
+    // These special memory regions are used for storing thread location
+    // info during kernel execution
+    Vsize *h_kernel_prefix_sums = nullptr;
+    bool *h_kernel_is_running = nullptr;
+    Vsize *d_kernel_prefix_sums = nullptr;
+    bool *d_kernel_is_running = nullptr;
 
     // These special memory regions are used for reducing results
-    // size = max(voxel_num, link_num) * sizeof(Vfloat) * 4
+    void *h_reduce_output = nullptr;
+    Vsize *h_sizes = nullptr;
     void *d_reduce1 = nullptr, *d_reduce2 = nullptr;
-
     Vsize *d_sizes = nullptr;
 };
+
 #endif // VX3_VOXELYZE_KERNEL_H

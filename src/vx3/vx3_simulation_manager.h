@@ -39,11 +39,11 @@ class VX3_SimulationManager {
     void init();
     void free();
     void addSim(const VX3_Config &config);
-    std::vector<bool> runSims(int max_steps = 1000000);
+    std::vector<bool> runSims(int max_steps = 1000000, bool save_result = true, bool save_record = true);
 
   private:
-    static void finishSim(Simulation &sim, cudaStream_t stream, bool has_no_exception,
-                          int device, int batch, int sim_index);
+    static void finishAndSaveRecordOfSim(Simulation &sim, cudaStream_t stream, bool has_no_exception, bool save_record,
+                                         int device, int batch, int sim_index);
     static void saveResultStart(Simulation &sim, cudaStream_t stream);
     static void saveResultEnd(Simulation &sim, cudaStream_t stream);
     static void saveRecord(Simulation &sim, cudaStream_t stream);

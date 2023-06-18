@@ -25,6 +25,7 @@ struct VX3_SimulationLinkRecord {
 
 struct VX3_SimulationRecord {
     using VoxelMaterialRecord = std::tuple<int, Vfloat, Vfloat, Vfloat, Vfloat>;
+    bool is_saved = false;
     Vfloat rescale;
     Vfloat vox_size;
     Vfloat dt_frac;
@@ -41,6 +42,7 @@ struct VX3_SimulationRecord {
 };
 
 struct VX3_SimulationResult {
+    bool is_saved = false;
     Vfloat start_time = 0.0;
     Vfloat end_time = 0.0;
     Vfloat fitness_score;

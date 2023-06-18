@@ -18,7 +18,7 @@ PYBIND11_MODULE(voxcraft, m) {
         .def_readwrite("devices", &Voxcraft::devices)
         .def_readwrite("batch_size_per_device", &Voxcraft::batch_size_per_device)
         .def("run_sims", &Voxcraft::runSims, py::arg("base_configs"),
-             py::arg("experiment_configs"));
+             py::arg("experiment_configs"), py::arg("save_result") = true, py::arg("save_record") = true);
 #ifdef VERSION_INFO
     m.attr("__version__") = VERSION_INFO;
 #else

@@ -14,6 +14,8 @@ using namespace fmt;
 string saveSimulationResult(const string &input_dir, const string &vxa_filename,
                             const string &vxd_filename,
                             const VX3_SimulationResult &result) {
+    if (not result.is_saved)
+        return {};
     pt::ptree tr_result;
 
     tr_result.put("report.input_dir", input_dir);
@@ -82,6 +84,8 @@ void saveSimulationResultToFile(const string &output_path, const string &input_d
 }
 
 string saveSimulationRecord(const VX3_SimulationRecord &record) {
+    if (not record.is_saved)
+        return {};
     stringstream ss;
 
     // rescale the whole space. so history file can contain less digits. ( e.g. not

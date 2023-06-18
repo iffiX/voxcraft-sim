@@ -22,14 +22,8 @@ class Voxcraft {
     size_t batch_size_per_device;
 
     explicit Voxcraft(const std::vector<int> &devices_ = {},
-                      size_t _batch_size_per_device = VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE)
+                      size_t _batch_size_per_device = 1024)
         : batch_size_per_device(_batch_size_per_device) {
-        if (batch_size_per_device > VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE) {
-            std::cout << "Batch size per device exceeds limit "
-                      << VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE
-                      << ", scaling down to accommodate" << std::endl;
-            batch_size_per_device = VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE;
-        }
         if (devices_.empty()) {
             int count;
             VcudaGetDeviceCount(&count);
@@ -41,7 +35,8 @@ class Voxcraft {
     }
 
     Result runSims(const std::vector<std::string> &base_configs,
-                   const std::vector<std::string> &experiment_configs) {
+                   const std::vector<std::string> &experiment_configs,
+                   bool save_result = true, bool save_record = true) {
         Result results;
         RawResult raw_results;
 
@@ -67,9 +62,9 @@ class Voxcraft {
                     base_configs.begin() + start, base_configs.begin() + end);
                 std::vector<std::string> sub_batch_experiment_configs(
                     experiment_configs.begin() + start, experiment_configs.begin() + end);
-                async_raw_results.emplace_back(
-                    async(&Voxcraft::runBatchedSims, sub_batch_base_configs,
-                          sub_batch_experiment_configs, device, b));
+                async_raw_results.emplace_back(async(
+                    &Voxcraft::runBatchedSims, sub_batch_base_configs,
+                    sub_batch_experiment_configs, save_result, save_record, device, b));
             }
             for (auto &result : async_raw_results) {
                 auto experiment_result = result.get();
@@ -102,7 +97,8 @@ class Voxcraft {
   private:
     static SubResult runBatchedSims(const std::vector<std::string> &base_configs,
                                     const std::vector<std::string> &experiment_configs,
-                                    int device, int batch) {
+                                    bool save_result, bool save_record, int device,
+                                    int batch) {
         VX3_SimulationManager sm(device, batch);
         sm.init();
         for (size_t i = 0; i < base_configs.size(); i++) {
@@ -110,7 +106,7 @@ class Voxcraft {
             sm.addSim(config);
         }
 
-        sm.runSims();
+        sm.runSims(1000000, save_result, save_record);
         sm.free();
         SubResult result;
         for (auto &sim : sm.sims) {
