@@ -9,6 +9,7 @@
 #include "vx3/vx3_simulation_record.h"
 #include "vx3/vx3_voxel.h"
 #include "vx3/vx3_voxel_material.h"
+#include <unordered_set>
 #include <vector>
 
 struct __align__(8) VX3_VoxelyzeKernel {
@@ -24,7 +25,7 @@ struct __align__(8) VX3_VoxelyzeKernel {
     Vfloat computeFitness(const Vec3f &start_center_of_mass,
                           const Vec3f &end_center_of_mass) const;
 
-    void adjustRecordFrameStorage(size_t required_size, cudaStream_t stream);
+    bool adjustRecordFrameStorage(size_t required_size, cudaStream_t stream);
 
     // update sub-routines used by doTimeStep
     __device__ void updateLinks(Vindex local_id);
@@ -122,6 +123,7 @@ struct __align__(8) VX3_VoxelyzeKernel {
 
     // Variables for recording
     // (host->dev, multi)
+    Vsize frame_storage_size = 0;
     unsigned long *d_steps = nullptr;
     Vfloat *d_time_points = nullptr;
     VX3_SimulationLinkRecord *d_link_record = nullptr;
@@ -145,9 +147,6 @@ struct __align__(8) VX3_VoxelyzeKernel {
     Vec3f current_center_of_mass_history[2];
     int angle_sample_times = 0;
     Vfloat recent_angle = 0;
-
-    // For frame recording
-    Vsize frame_storage_size = 0;
 };
 
 struct VX3_VoxelyzeKernelBatchExecutor {
@@ -176,7 +175,8 @@ struct VX3_VoxelyzeKernelBatchExecutor {
 
     std::vector<std::pair<int, Vfloat>> computeTargetCloseness() const;
 
-    void updateMetrics() const;
+    void
+    updateMetrics(const std::unordered_set<size_t> &update_metrics_kernel_indices) const;
 
     cudaStream_t stream;
 

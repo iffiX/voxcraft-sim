@@ -14,11 +14,12 @@ using namespace std;
 PYBIND11_MODULE(voxcraft, m) {
     py::class_<Voxcraft>(m, "Voxcraft")
         .def(py::init<const vector<int> &, size_t>(), py::arg("devices") = vector<int>{},
-             py::arg("batch_size_per_device") = VX3_VOXELYZE_KERNEL_MAX_BATCH_SIZE)
+             py::arg("batch_size_per_device") = 1024)
         .def_readwrite("devices", &Voxcraft::devices)
         .def_readwrite("batch_size_per_device", &Voxcraft::batch_size_per_device)
         .def("run_sims", &Voxcraft::runSims, py::arg("base_configs"),
-             py::arg("experiment_configs"), py::arg("save_result") = true, py::arg("save_record") = true);
+             py::arg("experiment_configs"), py::arg("save_result") = true,
+             py::arg("save_record") = true);
 #ifdef VERSION_INFO
     m.attr("__version__") = VERSION_INFO;
 #else

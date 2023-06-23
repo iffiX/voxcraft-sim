@@ -89,9 +89,8 @@ VX3_VoxelyzeKernelManager::createKernelFromConfig(const VX3_Config &config,
     kernel.temp_period = config.temp_period;
 
     // Collect target voxel indices
-    Vindex *tmp_target_indices;
+    auto tmp_target_indices = new Vindex[ictx.voxels.size()];
     Vsize target_num = 0;
-    VcudaMallocHost(&tmp_target_indices, sizeof(Vindex) * ictx.voxels.size());
     for (Vindex vox = 0; vox < ictx.voxels.size(); vox++) {
         if (ictx.voxel_materials[ictx.voxels[vox].voxel_material].is_target) {
             tmp_target_indices[target_num++] = vox;
@@ -102,7 +101,7 @@ VX3_VoxelyzeKernelManager::createKernelFromConfig(const VX3_Config &config,
                      sizeof(Vindex) * target_num, cudaMemcpyHostToDevice, stream);
     // Make sure all host data are transferred
     VcudaStreamSynchronize(stream);
-    VcudaFreeHost(tmp_target_indices);
+    delete[] tmp_target_indices;
     kernel.target_num = target_num;
 
     return kernel;

@@ -71,23 +71,29 @@ vector<bool> VX3_SimulationManager::runSims(int max_steps, bool save_result,
     for (int step = 0; step < max_steps; step++) { // Maximum Steps 1000000
         vector<size_t> kernel_indices;
         for (size_t i = 0; i < kernels.size(); i++) {
-            auto &sim = sims[sim_indices[i]];
-            if (not sim.is_finished and exec.getKernel(i).isStopConditionMet()) {
-                sim.is_finished = true;
-            }
-            if (save_result and not sim.is_result_started and
-                exec.getKernel(i).isResultStartConditionMet()) {
-                sim.is_result_started = true;
-                saveResultStart(sim, stream);
-            }
-            if (save_result and ((sim.is_result_started and not sim.is_result_ended and
-                                  exec.getKernel(i).isResultEndConditionMet()) or
-                                 step == max_steps - 1)) {
-                sim.is_result_ended = true;
-                saveResultEnd(sim, stream);
-            }
-            if (not sim.is_finished) {
-                kernel_indices.push_back(i);
+            if (has_no_exceptions[i]) {
+                auto &sim = sims[sim_indices[i]];
+                if (not sim.is_finished and exec.getKernel(i).isStopConditionMet()) {
+                    sim.is_finished = true;
+                    sim.kernel = exec.getKernel(i);
+                }
+                if (save_result and not sim.is_result_started and
+                    exec.getKernel(i).isResultStartConditionMet()) {
+                    sim.is_result_started = true;
+                    sim.kernel = exec.getKernel(i);
+                    saveResultStart(sim, stream);
+                }
+                if (save_result and
+                    ((sim.is_result_started and not sim.is_result_ended and
+                      exec.getKernel(i).isResultEndConditionMet()) or
+                     step == max_steps - 1)) {
+                    sim.is_result_ended = true;
+                    sim.kernel = exec.getKernel(i);
+                    saveResultEnd(sim, stream);
+                }
+                if (not sim.is_finished) {
+                    kernel_indices.push_back(i);
+                }
             }
         }
 
@@ -101,6 +107,7 @@ vector<bool> VX3_SimulationManager::runSims(int max_steps, bool save_result,
                      << COLORCODE_BOLD_RED "Simulation " << kernel_indices[i]
                      << " diverged.\n" COLORCODE_RESET << endl;
                 sims[kernel_indices[i]].is_finished = true;
+                sims[kernel_indices[i]].kernel = exec.getKernel(i);
                 has_no_exceptions[kernel_indices[i]] = false;
             }
         }

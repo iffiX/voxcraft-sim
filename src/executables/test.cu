@@ -104,7 +104,7 @@ int main(int argc, char **argv) {
 
     vector<string> bases, robots;
 
-    for (size_t i = 0; i < 1000; i++) {
+    for (size_t i = 0; i < 2048; i++) {
         // auto robot_config_path = (input / fmt::format("{}.vxd", i)).string();
         auto robot_config_path = (input / "robot.vxd").string();
         ifstream robot_file(robot_config_path);
@@ -116,5 +116,9 @@ int main(int argc, char **argv) {
     }
 
     Voxcraft vx({}, 10000);
-    auto result = vx.runSims(bases, robots, false, false);
+    auto result = vx.runSims(bases, robots, true, false);
+    //    for (size_t i = 0; i < 10; i++) {
+    //        std::cout << i << ":" << get<0>(result)[i] << std::endl;
+    //        std::cout << i << ":" << get<1>(result)[i] << std::endl;
+    //    }
 }

@@ -58,62 +58,61 @@ struct helper {
     // Provide unified access to regular fields and nested fields
     // For regular fields, T is a pointer type
     // For nested fields, T is VX3_hdStructOfArrays<SomeNestedField>
-    template <typename T> static std::enable_if_t<std::is_class_v<T>> init(T &t) {}
-
-    template <typename T> static std::enable_if_t<not std::is_class_v<T>> init(T &t) {
-        t = nullptr;
+    template <typename T>
+    static typename std::enable_if<std::is_class_v<T>, size_t>::type
+    _getLastMemberEnd(T &t, size_t prev_last_member_end, size_t num) {
+        return t._getLastMemberEnd(prev_last_member_end, num);
     }
 
     template <typename T>
-    static std::enable_if_t<std::is_class_v<T>> resize(T &t, size_t new_size,
-                                                       const cudaStream_t &stream) {
-        if (new_size == 0)
-            t.free(stream);
-        else
-            t.resize(new_size, stream);
+    static typename std::enable_if<not std::is_class_v<T>, size_t>::type
+    _getLastMemberEnd(T &t, size_t prev_last_member_end, size_t num) {
+        using element_type = typename std::remove_extent_t<std::remove_pointer_t<T>>;
+        return ALIGN(prev_last_member_end, 16) + sizeof(element_type) * num;
     }
 
     template <typename T>
-    static std::enable_if_t<not std::is_class_v<T>> resize(T &t, size_t new_size,
-                                                           const cudaStream_t &stream) {
-        using type = typename std::remove_pointer<T>::type;
-        if (t != nullptr)
-            VcudaFreeAsync(t, stream);
-        if (new_size == 0)
+    static typename std::enable_if<std::is_class_v<T>, size_t>::type
+    _setMember(T &t, std::byte *storage_root, size_t prev_last_member_end, size_t num) {
+        t._storage_size = num;
+        t._storage_root = nullptr;
+        t._storage_root_bytes = 0;
+        return t._setMember(storage_root, prev_last_member_end, num);
+    }
+
+    template <typename T>
+    static typename std::enable_if<not std::is_class_v<T>, size_t>::type
+    _setMember(T &t, std::byte *storage_root, size_t prev_last_member_end, size_t num) {
+        using element_type = typename std::remove_extent_t<std::remove_pointer_t<T>>;
+        if (num == 0) {
             t = nullptr;
-        else
-            VcudaMallocAsync(&t, new_size * sizeof(type), stream);
+            return 0;
+        } else {
+            t = (T)(storage_root + ALIGN(prev_last_member_end, 16));
+            return ALIGN(prev_last_member_end, 16) + sizeof(element_type) * num;
+        }
     }
 
     template <typename T, typename T2>
-    static std::enable_if_t<std::is_class_v<T>> fill(T &t, T2 *&values, size_t num,
-                                                     const cudaStream_t &stream) {
-        t.fill(values, num, stream);
+    static typename std::enable_if<std::is_class_v<T>, size_t>::type
+    _packOrUnpackData(T &t, std::byte *packed_host_storage_root, T2 *unpacked_data,
+                      size_t prev_last_member_end, size_t num, bool is_pack) {
+        return t._packOrUnpackData(packed_host_storage_root, unpacked_data,
+                                   prev_last_member_end, num, is_pack);
     }
 
     template <typename T, typename T2>
-    static std::enable_if_t<not std::is_class_v<T>> fill(T &t, T2 *&values, size_t num,
-                                                         const cudaStream_t &stream) {
-        // Because arrays are flattened, use base element type
+    static typename std::enable_if<not std::is_class_v<T>, size_t>::type
+    _packOrUnpackData(T &t, std::byte *packed_host_storage_root, T2 *unpacked_data,
+                      size_t prev_last_member_end, size_t num, bool is_pack) {
         using element_type = typename std::remove_extent_t<std::remove_pointer_t<T>>;
-        VcudaMemcpyAsync(t, values, num * sizeof(element_type), cudaMemcpyHostToDevice,
-                         stream);
-    }
-
-    template <typename T, typename T2>
-    static std::enable_if_t<std::is_class_v<T>> read(T &t, T2 *values, size_t num,
-                                                     const cudaStream_t &stream) {
-        // num are not used for now since we assume reading the whole soa
-        t.read(values, stream);
-    }
-
-    template <typename T, typename T2>
-    static std::enable_if_t<not std::is_class_v<T>> read(T &t, T2 *values, size_t num,
-                                                         const cudaStream_t &stream) {
-        // Because arrays are flattened, use base element type
-        using element_type = typename std::remove_extent_t<std::remove_pointer_t<T>>;
-        VcudaMemcpyAsync(values, t, num * sizeof(element_type), cudaMemcpyDeviceToHost,
-                         stream);
+        auto start = packed_host_storage_root + ALIGN(prev_last_member_end, 16);
+        if (is_pack) {
+            memcpy(start, unpacked_data, num * sizeof(element_type));
+        } else {
+            memcpy(unpacked_data, start, num * sizeof(element_type));
+        }
+        return ALIGN(prev_last_member_end, 16) + sizeof(element_type) * num;
     }
 
     template <typename T, typename T2>
@@ -190,31 +189,33 @@ struct VX3_hdStructOfArrays
     static_assert(field_members::size > 0, "Type has no fields!");
     static_assert(unreadable_field_members::size == 0, "Type has unreadable fields!");
 
-    explicit VX3_hdStructOfArrays() : _storage_size(0) {
-        for_each(field_members{}, [&](auto member) {
-            constexpr auto i = refl::trait::index_of_v<decltype(member), field_members>;
-            helper::init(cuda::std::get<i>(_storage));
-        });
+    explicit VX3_hdStructOfArrays()
+        : _storage_size(0), _storage_root(nullptr), _storage_root_bytes(0) {
+        _setMember(nullptr, 0, 0);
     }
 
     ~VX3_hdStructOfArrays() = default;
 
-    void free(const cudaStream_t &stream) {
-        for_each(field_members{}, [&](auto member) {
-            constexpr auto i = refl::trait::index_of_v<decltype(member), field_members>;
-            helper::resize(cuda::std::get<i>(_storage), 0, stream);
-        });
-        VcudaStreamSynchronize(stream);
-        _storage_size = 0;
-    }
+    void free(const cudaStream_t &stream) { resize(0, stream); }
 
+    /**
+     * Resize doesn't copy data since copying each segment of member data
+     * to their new location is expensive
+     */
     void resize(size_t new_size, const cudaStream_t &stream) {
-        for_each(field_members{}, [&](auto member) {
-            constexpr auto i = refl::trait::index_of_v<decltype(member), field_members>;
-            helper::resize(cuda::std::get<i>(_storage), new_size, stream);
-        });
-        VcudaStreamSynchronize(stream);
+        if (_storage_root != nullptr)
+            VcudaFreeAsync(_storage_root, stream);
+        if (new_size != 0) {
+            size_t required_bytes = _getLastMemberEnd(0, new_size);
+            VcudaMallocAsync(&_storage_root, required_bytes, stream);
+            _storage_root_bytes = required_bytes;
+        } else {
+            _storage_root = nullptr;
+            _storage_root_bytes = 0;
+        }
         _storage_size = new_size;
+        _setMember(_storage_root, 0, new_size);
+        VcudaStreamSynchronize(stream);
     }
 
     void fill(const T &input, const cudaStream_t &stream) {
@@ -230,40 +231,14 @@ struct VX3_hdStructOfArrays
     }
 
     void fill(T *input, size_t num, const cudaStream_t &stream) {
-        if (num > _storage_size)
-            resize(num, stream);
-        std::vector<void *> tmp_storage;
-        for_each(field_members{}, [&](auto member, size_t index) {
-            constexpr auto i = refl::trait::index_of_v<decltype(member), field_members>;
-            using type = custom_underlying_type<decltype(member)>;
-            if constexpr (not std::is_array_v<type>) {
-                auto tmp = (type *)std::malloc(sizeof(type) * num);
-                tmp_storage.emplace_back(tmp);
-                for (size_t j = 0; j < num; j++)
-                    tmp[j] = member(input[j]);
-                helper::fill(cuda::std::get<i>(_storage), tmp, num, stream);
-            } else {
-                // Flattens arrays, interleave elements as A1, B1, C1, A2, B2, C2, ...
-                // A, B, C are arrays and 1, 2 are sub-indicies
-                constexpr size_t length =
-                    sizeof(type) / sizeof(std::remove_extent_t<type>);
-                using array_elem_type = std::remove_extent_t<type>;
-                auto tmp = (array_elem_type *)std::malloc(sizeof(array_elem_type) * num *
-                                                          length);
-                tmp_storage.emplace_back(tmp);
-                for (size_t j = 0; j < length; j++) {
-                    for (size_t k = 0; k < num; k++) {
-                        tmp[j * num + k] = member(input[k])[j];
-                    }
-                }
-                // Note: since we flattens the array, copy num * length elements
-                helper::fill(cuda::std::get<i>(_storage), tmp, num * length, stream);
-            }
-        });
+        resize(num, stream);
+        auto tmp_storage_root = new std::byte[_storage_root_bytes];
+        _packOrUnpackData(tmp_storage_root, input, 0, num, true);
+        VcudaMemcpyAsync(_storage_root, tmp_storage_root, _storage_root_bytes,
+                         cudaMemcpyHostToDevice, stream);
         // Make sure all device side data are transferred
         VcudaStreamSynchronize(stream);
-        for (auto tmp : tmp_storage)
-            std::free(tmp);
+        delete[] tmp_storage_root;
     }
 
     void read(std::vector<T> &output, const cudaStream_t &stream) {
@@ -276,54 +251,13 @@ struct VX3_hdStructOfArrays
     }
 
     void read(T *output, const cudaStream_t &stream) {
-        std::vector<void *> tmp_storage;
-        for_each(field_members{}, [&](auto member, size_t index) {
-            constexpr auto i = refl::trait::index_of_v<decltype(member), field_members>;
-            using type = custom_underlying_type<decltype(member)>;
-            if constexpr (not std::is_array_v<type>) {
-                auto tmp = (type *)std::malloc(sizeof(type) * _storage_size);
-                tmp_storage.emplace_back(tmp);
-                helper::read(cuda::std::get<i>(_storage), tmp, _storage_size, stream);
-            } else {
-                // Un-flattens arrays, interleave elements as A1, B1, C1, A2, B2, C2, ...
-                // A, B, C are arrays and 1, 2 are sub-indicies
-                constexpr size_t length =
-                    sizeof(type) / sizeof(std::remove_extent_t<type>);
-                using array_elem_type = std::remove_extent_t<type>;
-                auto tmp = (array_elem_type *)std::malloc(sizeof(array_elem_type) *
-                                                          _storage_size * length);
-                tmp_storage.emplace_back(tmp);
-                // Note: since we flattens the array, copy _storage_size * length elements
-                helper::read(cuda::std::get<i>(_storage), tmp, _storage_size * length,
-                             stream);
-            }
-        });
+        auto tmp_storage_root = new std::byte[_storage_root_bytes];
+        VcudaMemcpyAsync(tmp_storage_root, _storage_root, _storage_root_bytes,
+                         cudaMemcpyDeviceToHost, stream);
         // Make sure all device side data are transferred
         VcudaStreamSynchronize(stream);
-        for_each(field_members{}, [&](auto member, size_t index) {
-            constexpr auto i = refl::trait::index_of_v<decltype(member), field_members>;
-            using type = custom_underlying_type<decltype(member)>;
-            if constexpr (not std::is_array_v<type>) {
-                auto tmp = (type *)tmp_storage[index];
-                for (size_t j = 0; j < _storage_size; j++)
-                    member(output[j]) = tmp[j];
-
-            } else {
-                // Un-flattens arrays, interleave elements as A1, B1, C1, A2, B2, C2, ...
-                // A, B, C are arrays and 1, 2 are sub-indicies
-                constexpr size_t length =
-                    sizeof(type) / sizeof(std::remove_extent_t<type>);
-                using array_elem_type = std::remove_extent_t<type>;
-                auto tmp = (array_elem_type *)tmp_storage[index];
-                for (size_t j = 0; j < length; j++) {
-                    for (size_t k = 0; k < _storage_size; k++) {
-                        member(output[k])[j] = tmp[j * _storage_size + k];
-                    }
-                }
-            }
-        });
-        for (auto tmp : tmp_storage)
-            std::free(tmp);
+        _packOrUnpackData(tmp_storage_root, output, 0, _storage_size, false);
+        delete[] tmp_storage_root;
     }
 
     /**
@@ -639,10 +573,107 @@ struct VX3_hdStructOfArrays
     // Number of stored virtual structures
     size_t _storage_size;
 
+    // The root memory region
+    std::byte *_storage_root;
+    size_t _storage_root_bytes;
+
     // Storage is a std::tuple containing device side memory pointers to
     // individual arrays Each array contains a property of the virtual
-    // "Structure"
+    // "Structure". Each pointer points to a aligned segment in _storage_root.
     as_tuple_t<refl::trait::map_t<make_storage, field_members>> _storage;
+
+    size_t _getLastMemberEnd(size_t prev_last_member_end, size_t num) {
+        size_t last_member_end = prev_last_member_end;
+        for_each(field_members{}, [&](auto member, size_t index) {
+            constexpr auto i = refl::trait::index_of_v<decltype(member), field_members>;
+            using type = custom_underlying_type<decltype(member)>;
+            if constexpr (not std::is_array_v<type>) {
+                last_member_end = helper::_getLastMemberEnd(cuda::std::get<i>(_storage),
+                                                            last_member_end, num);
+            } else {
+                // Flattens arrays, interleave elements as A1, B1, C1, A2, B2, C2, ...
+                // A, B, C are arrays and 1, 2 are sub-indices
+                constexpr size_t length =
+                    sizeof(type) / sizeof(std::remove_extent_t<type>);
+                last_member_end = helper::_getLastMemberEnd(
+                    cuda::std::get<i>(_storage), last_member_end, num * length);
+            }
+        });
+        return last_member_end;
+    }
+    size_t _setMember(std::byte *storage_root, size_t prev_last_member_end, size_t num) {
+        size_t last_member_end = prev_last_member_end;
+        for_each(field_members{}, [&](auto member, size_t index) {
+            constexpr auto i = refl::trait::index_of_v<decltype(member), field_members>;
+            using type = custom_underlying_type<decltype(member)>;
+            if constexpr (not std::is_array_v<type>) {
+                last_member_end = helper::_setMember(cuda::std::get<i>(_storage),
+                                                     storage_root, last_member_end, num);
+            } else {
+                // Flattens arrays, interleave elements as A1, B1, C1, A2, B2, C2, ...
+                // A, B, C are arrays and 1, 2 are sub-indices
+                constexpr size_t length =
+                    sizeof(type) / sizeof(std::remove_extent_t<type>);
+                last_member_end =
+                    helper::_setMember(cuda::std::get<i>(_storage), storage_root,
+                                       last_member_end, num * length);
+            }
+        });
+        return last_member_end;
+    }
+    size_t _packOrUnpackData(std::byte *packed_host_storage_root, T *unpacked_data,
+                             size_t prev_last_member_end, size_t num, bool is_pack) {
+        size_t last_member_end = prev_last_member_end;
+        std::vector<void *> tmp_storage;
+        for_each(field_members{}, [&](auto member, size_t index) {
+            constexpr auto i = refl::trait::index_of_v<decltype(member), field_members>;
+            using type = custom_underlying_type<decltype(member)>;
+            if constexpr (not std::is_array_v<type>) {
+                auto tmp = (type *)std::malloc(sizeof(type) * num);
+                tmp_storage.emplace_back(tmp);
+                if (is_pack) {
+                    for (size_t j = 0; j < num; j++)
+                        tmp[j] = member(unpacked_data[j]);
+                }
+                last_member_end = helper::_packOrUnpackData(
+                    cuda::std::get<i>(_storage), packed_host_storage_root, tmp,
+                    last_member_end, num, is_pack);
+                if (not is_pack) {
+                    for (size_t j = 0; j < num; j++)
+                        member(unpacked_data[j]) = tmp[j];
+                }
+            } else {
+                // Flattens arrays, interleave elements as A1, B1, C1, A2, B2, C2, ...
+                // A, B, C are arrays and 1, 2 are sub-indices
+                constexpr size_t length =
+                    sizeof(type) / sizeof(std::remove_extent_t<type>);
+                using array_elem_type = std::remove_extent_t<type>;
+                auto tmp = (array_elem_type *)std::malloc(sizeof(array_elem_type) * num *
+                                                          length);
+                tmp_storage.emplace_back(tmp);
+                if (is_pack) {
+                    for (size_t j = 0; j < length; j++) {
+                        for (size_t k = 0; k < num; k++) {
+                            tmp[j * num + k] = member(unpacked_data[k])[j];
+                        }
+                    }
+                }
+                last_member_end = helper::_packOrUnpackData(
+                    cuda::std::get<i>(_storage), packed_host_storage_root, tmp,
+                    last_member_end, num * length, is_pack);
+                if (not is_pack) {
+                    for (size_t j = 0; j < length; j++) {
+                        for (size_t k = 0; k < num; k++) {
+                            member(unpacked_data[k])[j] = tmp[j * num + k];
+                        }
+                    }
+                }
+            }
+        });
+        for (auto tmp : tmp_storage)
+            std::free(tmp);
+        return last_member_end;
+    }
 };
 
 template <size_t N, typename T>

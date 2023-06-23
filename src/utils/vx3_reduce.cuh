@@ -71,8 +71,8 @@ __global__ void block_align(const T *d_in, T *d_out, const Vsize *d_in_sizes,
     if (gt.gid == NULL_INDEX)
         return;
 
-    if (gt.tid < d_in_sizes[gt.gid]) {
-        d_out[tid] = d_in[gt.tid + d_in_offsets[gt.gid]];
+    if (gt.gtid < d_in_sizes[gt.gid]) {
+        d_out[tid] = d_in[gt.gtid + d_in_offsets[gt.gid]];
     } else {
         d_out[tid] = init_value;
     }
