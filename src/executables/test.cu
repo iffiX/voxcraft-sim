@@ -115,7 +115,7 @@ int main(int argc, char **argv) {
         robots.push_back(robot);
     }
 
-    Voxcraft vx({}, 10000);
+    Voxcraft vx({}, 512);
     auto result = vx.runSims(bases, robots, true, false);
     //    for (size_t i = 0; i < 10; i++) {
     //        std::cout << i << ":" << get<0>(result)[i] << std::endl;

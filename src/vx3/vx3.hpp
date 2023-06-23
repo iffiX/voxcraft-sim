@@ -22,7 +22,7 @@ class Voxcraft {
     size_t batch_size_per_device;
 
     explicit Voxcraft(const std::vector<int> &devices_ = {},
-                      size_t _batch_size_per_device = 1024)
+                      size_t _batch_size_per_device = 512)
         : batch_size_per_device(_batch_size_per_device) {
         if (devices_.empty()) {
             int count;
