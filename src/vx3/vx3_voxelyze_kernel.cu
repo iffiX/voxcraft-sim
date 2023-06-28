@@ -80,30 +80,31 @@ vector<ResultType> runFunctionAndReduce(FuncType func, ResultType init_value,
         return {};
     runFunction(func, exec, -1, (ResultType *)exec.d_reduce1);
 
-    //    // For debugging`
-    //    Vsize kernel_num = exec.kernel_num;
-    //    VcudaStreamSynchronize(exec.stream);
-    //    ResultType *tmp;
-    //    VcudaMallocHost(&tmp, sizeof(ResultType) * exec.h_kernel_prefix_sums[kernel_num
-    //    - 1]); VcudaMemcpyAsync(tmp, exec.d_reduce1,
-    //                     sizeof(ResultType) * exec.h_kernel_prefix_sums[kernel_num - 1],
-    //                     cudaMemcpyDeviceToHost, exec.stream);
-    //    VcudaStreamSynchronize(exec.stream);
-    //    size_t offset = 0;
-    //    for (size_t k = 0; k < kernel_num; k++) {
-    //        std::cout << "Kernel " << k << ": ";
-    //        for (size_t i = offset; i < exec.h_kernel_prefix_sums[k]; i++) {
-    //            std::cout << ((float *)tmp)[i] << " ";
+    //        // For debugging`
+    //        Vsize kernel_num = exec.kernel_num;
+    //        VcudaStreamSynchronize(exec.stream);
+    //        ResultType *tmp;
+    //        VcudaMallocHost(&tmp, sizeof(ResultType) *
+    //        exec.h_kernel_prefix_sums[kernel_num
+    //        - 1]); VcudaMemcpyAsync(tmp, exec.d_reduce1,
+    //                         sizeof(ResultType) * exec.h_kernel_prefix_sums[kernel_num -
+    //                         1], cudaMemcpyDeviceToHost, exec.stream);
+    //        VcudaStreamSynchronize(exec.stream);
+    //        size_t offset = 0;
+    //        for (size_t k = 0; k < kernel_num; k++) {
+    //            std::cout << "Kernel " << k << ": ";
+    //            for (size_t i = offset; i < exec.h_kernel_prefix_sums[k]; i++) {
+    //                std::cout << ((float *)tmp)[i] << " ";
+    //            }
+    //            std::cout << std::endl;
+    //            offset = exec.h_kernel_prefix_sums[k];
     //        }
-    //        std::cout << std::endl;
-    //        offset = exec.h_kernel_prefix_sums[k];
-    //    }
 
     auto partial_result = reduce_by_group<ResultType, ReduceOp>(
         exec.h_reduce_output, exec.d_reduce1, exec.d_reduce2, exec.d_reduce1,
         exec.h_sizes, exec.d_sizes, exec.kernel_len, exec.stream, init_value);
 
-    //    VcudaFreeHost(tmp);
+    //        VcudaFreeHost(tmp);
 
     CUDA_CHECK_AFTER_CALL();
     vector<ResultType> result;
@@ -351,12 +352,11 @@ __global__ void computeLinkFreq(VX3_VoxelyzeKernel *kernels, const Vsize *p_sum,
                                 Vfloat *link_freq) {
     unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
     auto gt = binary_group_search(tid, p_sum, kernel_num);
-    if (gt.gid == NULL_INDEX or not k_is_running[gt.gid])
+    if (gt.gid == NULL_INDEX)
         return;
-    Vindex kid = gt.gid;
-    auto &ctx = kernels[kid].ctx;
+    auto &ctx = kernels[gt.gid].ctx;
 
-    if (gt.gtid < ctx.links.size()) {
+    if (k_is_running[gt.gid] and gt.gtid < ctx.links.size()) {
         Vindex voxel_neg = L_G(gt.gtid, voxel_neg);
         Vindex voxel_pos = L_G(gt.gtid, voxel_pos);
         Vindex voxel_neg_mat = V_G(voxel_neg, voxel_material);
@@ -376,12 +376,11 @@ __global__ void computeVoxelFreq(VX3_VoxelyzeKernel *kernels, const Vsize *p_sum
                                  Vfloat *voxel_freq) {
     unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
     auto gt = binary_group_search(tid, p_sum, kernel_num);
-    if (gt.gid == NULL_INDEX or not k_is_running[gt.gid])
+    if (gt.gid == NULL_INDEX)
         return;
-    Vindex kid = gt.gid;
-    auto &ctx = kernels[kid].ctx;
+    auto &ctx = kernels[gt.gid].ctx;
 
-    if (gt.gtid < ctx.voxels.size()) {
+    if (k_is_running[gt.gid] and gt.gtid < ctx.voxels.size()) {
         Vindex mat = V_G(gt.gtid, voxel_material);
         Vfloat youngs_modulus = VM_G(mat, E);
         Vfloat nom_size = VM_G(mat, nom_size);
@@ -431,12 +430,11 @@ __global__ void checkLinkDivergence(VX3_VoxelyzeKernel *kernels, const Vsize *p_
                                     bool *link_diverged) {
     unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
     auto gt = binary_group_search(tid, p_sum, kernel_num);
-    if (gt.gid == NULL_INDEX or not k_is_running[gt.gid])
+    if (gt.gid == NULL_INDEX)
         return;
-    Vindex kid = gt.gid;
-    auto &ctx = kernels[kid].ctx;
+    auto &ctx = kernels[gt.gid].ctx;
 
-    if (gt.gtid < ctx.links.size()) {
+    if (k_is_running[gt.gid] and gt.gtid < ctx.links.size()) {
         link_diverged[tid] = L_G(gt.gtid, strain) > 100;
     } else
         link_diverged[tid] = false;
@@ -464,12 +462,11 @@ __global__ void computeMassDotPosition(VX3_VoxelyzeKernel *kernels, const Vsize 
                                        MassDotPos *mdp_vec) {
     unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
     auto gt = binary_group_search(tid, p_sum, kernel_num);
-    if (gt.gid == NULL_INDEX or not k_is_running[gt.gid])
+    if (gt.gid == NULL_INDEX)
         return;
-    Vindex kid = gt.gid;
-    auto &ctx = kernels[kid].ctx;
+    auto &ctx = kernels[gt.gid].ctx;
 
-    if (gt.gtid < ctx.voxels.size()) {
+    if (k_is_running[gt.gid] and gt.gtid < ctx.voxels.size()) {
         Vindex mat = V_G(gt.gtid, voxel_material);
         bool is_measured = VM_G(mat, is_measured);
         if (not is_measured) {
@@ -529,17 +526,16 @@ __global__ void computeTargetDistances(VX3_VoxelyzeKernel *kernels, const Vsize 
                                        TargetCloseness *tc_vec) {
     unsigned int tid = threadIdx.x + blockIdx.x * blockDim.x;
     auto gt = binary_group_search(tid, p_sum, kernel_num);
-    if (gt.gid == NULL_INDEX or not k_is_running[gt.gid])
+    if (gt.gid == NULL_INDEX)
         return;
     Vindex kid = gt.gid;
-
     auto &kernel = kernels[kid];
     auto &ctx = kernel.ctx;
 
     int local_num_close_pairs = 0;
     Vfloat local_closeness = 0;
     Vfloat radius = kernel.max_dist_in_voxel_lengths_to_count_as_pair * kernel.vox_size;
-    if (gt.gtid < kernel.target_num) {
+    if (k_is_running[kid] and gt.gtid < kernel.target_num) {
         Vindex src_voxel = kernel.d_target_indices[gt.gtid];
         for (unsigned int j = gt.gtid + 1; j < kernel.target_num; j++) {
             Vec3f pos1 = V_G(src_voxel, position);
